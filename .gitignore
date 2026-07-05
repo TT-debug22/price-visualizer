@@ -5,6 +5,7 @@ node_modules/
 .playwright-browsers/
 test-results/
 playwright-report/
+/price-visualizer/
 
 .env
 .env.local
