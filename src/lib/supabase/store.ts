@@ -20,6 +20,7 @@ import { DEFAULT_PRICE_SETTINGS } from "@/domain/price-types";
 import { calculateEffectivePrice, toNumberOrNull, validatePriceSnapshot } from "@/domain/price-calculations";
 import { createPriceHistory, latestHistoryForOffer, shouldCreatePriceHistory } from "@/domain/price-history";
 import { normalizeCandidateRanks } from "@/domain/ranking";
+import { wishlistPrice } from "@/domain/wishlist";
 import { createSupabaseServerClient, getAuthenticatedUserId } from "./server";
 
 interface ProductRow {
@@ -119,6 +120,12 @@ interface LedgerEntryRow {
   created_at: string;
 }
 
+export interface PurchaseSupabaseProductResult {
+  state: PriceAppState;
+  ledgerEntry: LedgerEntry | null;
+  message: string;
+}
+
 function newId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
 }
@@ -165,6 +172,12 @@ function textOrNull(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function dateOrToday(value: unknown, now: Date): string {
+  const text = textOrNull(value);
+  if (text && /^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  return now.toISOString().slice(0, 10);
 }
 
 function normalizeColor(value: unknown): string | null {
@@ -578,6 +591,52 @@ export async function deleteSupabaseProduct(productId: string): Promise<PriceApp
   await assertOk(supabase.from("products").delete().eq("id", productId).eq("user_id", userId));
   await normalizeSupabaseCandidateRanks(supabase, userId);
   return readSupabaseState();
+}
+
+export async function purchaseSupabaseProduct(productId: string, input: Record<string, unknown>): Promise<PurchaseSupabaseProductResult> {
+  const supabase = await createSupabaseServerClient();
+  const userId = await getAuthenticatedUserId();
+  const state = await readSupabaseState();
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) throw new Error("商品が見つかりません");
+
+  const now = new Date();
+  const inputAmount = toNumberOrNull(String(input.amount ?? ""));
+  const amount = inputAmount ?? wishlistPrice(product);
+  if (amount === null || amount < 0) throw new Error("購入金額を入力してください");
+
+  await assertOk(
+    supabase
+      .from("products")
+      .update({ wishlist_status: "purchased", updated_at: now.toISOString() })
+      .eq("id", productId)
+      .eq("user_id", userId)
+  );
+  await normalizeSupabaseCandidateRanks(supabase, userId);
+
+  const existingLedger = state.ledgerEntries.find((entry) => entry.productId === productId && entry.entryType === "expense") ?? null;
+  let ledgerEntry: LedgerEntry | null = null;
+  let message = "購入済みにして、家計簿へ記録しました";
+
+  if (existingLedger) {
+    message = "購入済みにしました。家計簿には既に記録済みです";
+  } else {
+    ledgerEntry = {
+      id: newId("ledger"),
+      userId,
+      productId,
+      title: textOrNull(input.title) ?? product.name,
+      amount,
+      entryType: "expense",
+      category: textOrNull(input.category) ?? product.detailCategory ?? product.category ?? "未分類",
+      occurredOn: dateOrToday(input.occurredOn, now),
+      note: textOrNull(input.note) ?? "ほしい物リストから購入記録",
+      createdAt: now.toISOString()
+    };
+    await assertOk(supabase.from("ledger_entries").insert(ledgerEntryToRow(ledgerEntry)));
+  }
+
+  return { state: await readSupabaseState(), ledgerEntry, message };
 }
 
 export async function recordSupabaseProductPrice(

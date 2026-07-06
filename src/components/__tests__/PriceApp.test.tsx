@@ -56,6 +56,34 @@ function mockFetch(state: PriceAppState) {
         };
         return new Response(JSON.stringify(currentState), { status: 200, headers: { "Content-Type": "application/json" } });
       }
+      if (String(url).includes("/api/products/") && String(url).includes("/purchase") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        const productId = String(url).split("/api/products/")[1]?.split("/")[0] ?? "product-headphones";
+        const product = currentState.products.find((item) => item.id === productId)!;
+        currentState = {
+          ...currentState,
+          products: currentState.products.map((item) => (item.id === productId ? { ...item, wishlistStatus: "purchased" } : item)),
+          ledgerEntries: [
+            {
+              id: "ledger-purchase-test",
+              userId: currentState.userId,
+              productId,
+              title: product.name,
+              amount: Number(body.amount),
+              entryType: "expense",
+              category: body.category,
+              occurredOn: body.occurredOn,
+              note: body.note,
+              createdAt: "2026-07-06T00:00:00.000Z"
+            },
+            ...currentState.ledgerEntries
+          ]
+        };
+        return new Response(JSON.stringify({ state: currentState, message: "購入済みにして、家計簿へ記録しました" }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
       if (String(url).includes("/api/products/") && init?.method === "PATCH") {
         const body = JSON.parse(String(init.body));
         const productId = String(url).split("/api/products/")[1]?.split("/")[0] ?? "product-headphones";
@@ -160,6 +188,17 @@ describe("PriceApp", () => {
     await userEvent.click(screen.getByTestId("delete-product"));
     await userEvent.click(screen.getByTestId("confirm-delete-product"));
     await waitFor(() => expect(screen.queryByTestId("product-card-product-headphones")).not.toBeInTheDocument());
+  });
+
+  it("購入済みにして家計簿へ記録できる", async () => {
+    mockFetch(createInitialState());
+    render(<PriceApp />);
+    await openPriceTab();
+    await userEvent.click(screen.getByTestId("record-purchase-button"));
+
+    expect(await screen.findByText("購入済みにして、家計簿へ記録しました")).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("tab-ledger"));
+    expect(screen.getByTestId("ledger-entry-list")).toHaveTextContent("ノイズキャンセリングヘッドホン");
   });
 
   it("カテゴリ色を任意設定できる", async () => {

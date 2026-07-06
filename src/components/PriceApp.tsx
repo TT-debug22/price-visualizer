@@ -308,7 +308,7 @@ function BudgetOverview({
   onOpenProduct: (productId: string) => void;
   onOpenLedger: () => void;
 }) {
-  const summary = calculateBudgetSummary(state, mode);
+  const summary = calculateBudgetSummary(state, mode, now);
   const colorOverrides = state.settings.categoryColorOverrides;
   const slices = categorySlices(summary.products, colorOverrides);
   const ledgerSummary = buildLedgerMonthSummary(state.ledgerEntries, ledgerMonthKey(now), state.settings.monthlyHouseholdBudget);
@@ -340,6 +340,7 @@ function BudgetOverview({
               <strong>{yen(Math.abs(summary.remaining))}</strong>
             </div>
           </div>
+          <p className="muted">対象期間: {summary.periodLabel}</p>
           <div className="budget-meter" aria-label={`予算使用率 ${usage}%`}>
             <span style={{ width: `${usage}%` }} />
           </div>
@@ -977,13 +978,16 @@ function EvaluationPanel({ product, state, now }: { product: Product; state: Pri
   );
 }
 
-function ProductPriceSettings({ product, onUpdated }: { product: Product; onUpdated: (state: PriceAppState) => void }) {
+function ProductPriceSettings({ product, now, onUpdated }: { product: Product; now: Date; onUpdated: (state: PriceAppState) => void }) {
   const [message, setMessage] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const purchaseAmount = wishlistPrice(product);
   async function submit(formData: FormData) {
     setMessage(null);
     setDeleteError(null);
+    setPurchaseError(null);
     const state = await parseResponse<PriceAppState>(
       await fetch(`/api/products/${product.id}`, {
         method: "PATCH",
@@ -995,9 +999,29 @@ function ProductPriceSettings({ product, onUpdated }: { product: Product; onUpda
     setMessage("商品情報を保存しました");
   }
 
+  async function recordPurchase(formData: FormData) {
+    setMessage(null);
+    setDeleteError(null);
+    setPurchaseError(null);
+    try {
+      const result = await parseResponse<{ state: PriceAppState; message: string }>(
+        await fetch(`/api/products/${product.id}/purchase`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(Object.fromEntries(formData))
+        })
+      );
+      onUpdated(result.state);
+      setMessage(result.message);
+    } catch (err) {
+      setPurchaseError(err instanceof Error ? err.message : "購入記録を作成できませんでした");
+    }
+  }
+
   async function deleteProduct() {
     setMessage(null);
     setDeleteError(null);
+    setPurchaseError(null);
     try {
       const state = await parseResponse<PriceAppState>(
         await fetch(`/api/products/${product.id}`, {
@@ -1101,6 +1125,36 @@ function ProductPriceSettings({ product, onUpdated }: { product: Product; onUpda
           保存
         </button>
       </form>
+      <div className="purchase-record-panel">
+        <div>
+          <strong>購入したら</strong>
+          <p className="muted">購入済みにして、同じ金額を家計簿の支出へ記録します。</p>
+        </div>
+        <form action={recordPurchase} className="purchase-record-form" data-testid="purchase-record-form">
+          <label>
+            購入金額
+            <input name="amount" type="number" min="0" defaultValue={purchaseAmount ?? ""} placeholder="価格未設定なら入力" data-testid="purchase-amount-input" />
+          </label>
+          <label>
+            購入日
+            <input name="occurredOn" type="date" defaultValue={now.toISOString().slice(0, 10)} />
+          </label>
+          <label>
+            家計簿カテゴリ
+            <input name="category" defaultValue={categoryKey(product)} />
+          </label>
+          <label>
+            メモ
+            <input name="note" defaultValue="ほしい物リストから購入" />
+          </label>
+          <button type="submit" className="primary-button" data-testid="record-purchase-button">
+            <ReceiptText size={16} />
+            購入済みにして記録
+          </button>
+        </form>
+        {product.wishlistStatus === "purchased" && <p className="success-text">この商品は購入済みです。</p>}
+        {purchaseError && <p className="form-error">{purchaseError}</p>}
+      </div>
       <div className="delete-product-zone">
         {confirmDelete ? (
           <div className="delete-confirm">
@@ -1491,7 +1545,7 @@ function ProductDetail({ product, state, now, onStateChange }: { product: Produc
           <span>{currentLowestRelationship(product, state.histories, state.settings, now)}</span>
         </div>
       </div>
-      <ProductPriceSettings product={product} onUpdated={onStateChange} />
+      <ProductPriceSettings product={product} now={now} onUpdated={onStateChange} />
       <details className="advanced-panel" data-testid="price-advanced-details">
         <summary data-testid="price-advanced-summary">価格推移・履歴を確認する</summary>
         <div className="advanced-panel-body">
@@ -1672,14 +1726,16 @@ function GlobalSettings({ state, onUpdated }: { state: PriceAppState; onUpdated:
 
 function AppFooter({
   state,
+  now,
   plannedSummary,
   onSignOut
 }: {
   state: PriceAppState;
+  now: Date;
   plannedSummary: ReturnType<typeof calculateBudgetSummary>;
   onSignOut: () => void;
 }) {
-  const primarySummary = calculateBudgetSummary(state, "primary");
+  const primarySummary = calculateBudgetSummary(state, "primary", now);
   return (
     <footer className="app-footer">
       <div className="app-status-footer" data-testid="app-status-footer">
@@ -1780,7 +1836,7 @@ export function PriceApp({ clock = systemClock }: { clock?: Clock } = {}) {
     return <main className="app-shell">価格データを読み込んでいます。</main>;
   }
 
-  const plannedSummary = calculateBudgetSummary(state, "planned");
+  const plannedSummary = calculateBudgetSummary(state, "planned", now);
 
   return (
     <main className="app-shell">
@@ -1851,7 +1907,7 @@ export function PriceApp({ clock = systemClock }: { clock?: Clock } = {}) {
           }}
         />
       )}
-      <AppFooter state={state} plannedSummary={plannedSummary} onSignOut={() => void signOut()} />
+      <AppFooter state={state} now={now} plannedSummary={plannedSummary} onSignOut={() => void signOut()} />
     </main>
   );
 }

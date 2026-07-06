@@ -21,11 +21,13 @@ import { createInitialState } from "@/domain/fixtures";
 import { calculateEffectivePrice, toNumberOrNull, validatePriceSnapshot } from "@/domain/price-calculations";
 import { createPriceHistory, latestHistoryForOffer, shouldCreatePriceHistory } from "@/domain/price-history";
 import { normalizeCandidateRanks } from "@/domain/ranking";
+import { wishlistPrice } from "@/domain/wishlist";
 import { isSupabaseConfigured } from "./supabase/env";
 import {
   createSupabaseProduct,
   createSupabaseLedgerEntry,
   deleteSupabaseProduct,
+  purchaseSupabaseProduct,
   readSupabaseState,
   recordSupabaseProductPrice,
   updateSupabaseHistoryExclusion,
@@ -34,6 +36,12 @@ import {
 } from "./supabase/store";
 
 const dataFile = process.env.PRICE_STATE_FILE ?? path.join(process.cwd(), ".data", "price-state.json");
+
+export interface PurchaseProductResult {
+  state: PriceAppState;
+  ledgerEntry: LedgerEntry | null;
+  message: string;
+}
 
 async function ensureDataDir(): Promise<void> {
   await fs.mkdir(path.dirname(dataFile), { recursive: true });
@@ -112,6 +120,12 @@ function textOrNull(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function dateOrToday(value: unknown, now: Date): string {
+  const text = textOrNull(value);
+  if (text && /^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  return now.toISOString().slice(0, 10);
 }
 
 function normalizeColor(value: unknown): string | null {
@@ -314,6 +328,47 @@ export async function deleteProduct(productId: string): Promise<PriceAppState> {
   state.ledgerEntries = state.ledgerEntries.map((entry) => (entry.productId === productId ? { ...entry, productId: null } : entry));
   await writeState(state);
   return state;
+}
+
+export async function purchaseProduct(productId: string, input: Record<string, unknown>): Promise<PurchaseProductResult> {
+  if (isSupabaseConfigured()) return purchaseSupabaseProduct(productId, input);
+  const state = await readState();
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) throw new Error("商品が見つかりません");
+
+  const now = new Date();
+  const inputAmount = toNumberOrNull(String(input.amount ?? ""));
+  const amount = inputAmount ?? wishlistPrice(product);
+  if (amount === null || amount < 0) throw new Error("購入金額を入力してください");
+
+  product.wishlistStatus = "purchased";
+  product.updatedAt = now.toISOString();
+  state.products = normalizeCandidateRanks(state.products);
+
+  const existingLedger = state.ledgerEntries.find((entry) => entry.productId === productId && entry.entryType === "expense") ?? null;
+  let ledgerEntry: LedgerEntry | null = null;
+  let message = "購入済みにして、家計簿へ記録しました";
+
+  if (existingLedger) {
+    message = "購入済みにしました。家計簿には既に記録済みです";
+  } else {
+    ledgerEntry = {
+      id: newId("ledger"),
+      userId: state.userId,
+      productId,
+      title: textOrNull(input.title) ?? product.name,
+      amount,
+      entryType: "expense",
+      category: textOrNull(input.category) ?? product.detailCategory ?? product.category ?? "未分類",
+      occurredOn: dateOrToday(input.occurredOn, now),
+      note: textOrNull(input.note) ?? "ほしい物リストから購入記録",
+      createdAt: now.toISOString()
+    };
+    state.ledgerEntries = [ledgerEntry, ...(state.ledgerEntries ?? [])];
+  }
+
+  await writeState(state);
+  return { state, ledgerEntry, message };
 }
 
 export async function recordProductPrice(

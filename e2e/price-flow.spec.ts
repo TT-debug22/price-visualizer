@@ -77,8 +77,24 @@ test("価格記録から底値再計算まで確認できる", async ({ request 
   expect(evaluateCurrentPrice(productWithTarget, state.histories, state.settings).kind).toBe("insufficient_history");
   expect(calculatePriceMetrics(productWithTarget, state.histories, state.settings).previousChange.amount).toBe(-5000);
 
+  const purchaseResult = await json<{ state: PriceAppState; message: string }>(
+    await request.post(`/api/products/${product.id}/purchase`, {
+      data: {
+        amount: 25000,
+        occurredOn: "2026-07-06",
+        category: "カメラ",
+        note: "E2E購入"
+      }
+    })
+  );
+  state = purchaseResult.state;
+  expect(purchaseResult.message).toContain("家計簿");
+  expect(state.products.find((item) => item.id === product.id)?.wishlistStatus).toBe("purchased");
+  expect(state.ledgerEntries.some((entry) => entry.productId === product.id && entry.amount === 25000)).toBe(true);
+
   const freshSessionState = await json<PriceAppState>(await request.get("/api/state"));
   expect(freshSessionState.products.some((item) => item.name === "E2Eカメラ")).toBe(true);
+  expect(freshSessionState.ledgerEntries.some((entry) => entry.productId === product.id && entry.note === "E2E購入")).toBe(true);
 
   const lowHistory = freshSessionState.histories.find((history) => history.productId === product.id && history.effectivePrice === 25000)!;
   state = await json<PriceAppState>(

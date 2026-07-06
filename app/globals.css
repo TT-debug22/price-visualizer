@@ -648,6 +648,22 @@ h2 {
   gap: 10px;
 }
 
+.purchase-record-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.purchase-record-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+}
+
 .ledger-form-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1420,6 +1436,7 @@ th {
   .ledger-hero,
   .ledger-summary-cards,
   .ledger-form-row,
+  .purchase-record-form,
   .ledger-chart-panel,
   .budget-chart-panel,
   .budget-amounts,

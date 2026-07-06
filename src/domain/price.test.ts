@@ -171,6 +171,18 @@ describe("価格ドメインロジック", () => {
     expect(selectedBudgetProducts(app.products, "planned").map((product) => product.id)).toEqual(["product-headphones", "product-coffee"]);
   });
 
+  it("月次予算では対象月の購入予定だけを合計する", () => {
+    const app = state();
+    app.settings.budgetPeriod = "monthly";
+    app.products.find((product) => product.id === "product-coffee")!.plannedPurchaseMonth = "2026-08";
+    const summary = calculateBudgetSummary(app, "planned", NOW);
+
+    expect(summary.periodLabel).toBe("2026年7月");
+    expect(summary.itemCount).toBe(1);
+    expect(summary.periodExcludedCount).toBe(1);
+    expect(summary.total).toBe(21800);
+  });
+
   it("価格未設定は予算合計から除外し、0円は価格ありとして扱う", () => {
     const app = state();
     const base = app.products[0];

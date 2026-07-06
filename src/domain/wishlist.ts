@@ -1,4 +1,5 @@
-import type { BudgetViewMode, PriceAppState, Product } from "./price-types";
+import type { BudgetPeriod, BudgetViewMode, PriceAppState, Product } from "./price-types";
+import { BUDGET_PERIOD_LABELS } from "./price-types";
 import { determineCurrentOffer } from "./price-calculations";
 
 export interface BudgetSummary {
@@ -10,6 +11,9 @@ export interface BudgetSummary {
   itemCount: number;
   pricedItemCount: number;
   unsetPriceCount: number;
+  budgetPeriod: BudgetPeriod;
+  periodLabel: string;
+  periodExcludedCount: number;
   products: Product[];
 }
 
@@ -44,8 +48,34 @@ export function selectedBudgetProducts(products: Product[], mode: BudgetViewMode
   return products.filter((product) => product.candidateRank === 1 && isActiveWishlistProduct(product));
 }
 
-export function calculateBudgetSummary(state: PriceAppState, mode: BudgetViewMode): BudgetSummary {
-  const products = selectedBudgetProducts(state.products, mode);
+function currentMonthKey(now: Date): string {
+  return now.toISOString().slice(0, 7);
+}
+
+function currentYearKey(now: Date): string {
+  return now.toISOString().slice(0, 4);
+}
+
+export function budgetPeriodLabel(period: BudgetPeriod, now: Date): string {
+  if (period === "monthly") {
+    const [year, month] = currentMonthKey(now).split("-");
+    return `${Number(year)}年${Number(month)}月`;
+  }
+  if (period === "yearly") return `${currentYearKey(now)}年`;
+  return BUDGET_PERIOD_LABELS.one_time;
+}
+
+export function matchesBudgetPeriod(product: Product, period: BudgetPeriod, now: Date): boolean {
+  if (period === "one_time") return true;
+  if (!product.plannedPurchaseMonth) return false;
+  if (period === "monthly") return product.plannedPurchaseMonth === currentMonthKey(now);
+  return product.plannedPurchaseMonth.slice(0, 4) === currentYearKey(now);
+}
+
+export function calculateBudgetSummary(state: PriceAppState, mode: BudgetViewMode, now = new Date()): BudgetSummary {
+  const budgetPeriod = state.settings.budgetPeriod;
+  const baseProducts = selectedBudgetProducts(state.products, mode);
+  const products = baseProducts.filter((product) => matchesBudgetPeriod(product, budgetPeriod, now));
   const prices = products.map(wishlistPrice);
   const total = prices.reduce<number>((sum, price) => sum + (price ?? 0), 0);
   const pricedItemCount = prices.filter((price) => price !== null).length;
@@ -59,6 +89,9 @@ export function calculateBudgetSummary(state: PriceAppState, mode: BudgetViewMod
     itemCount: products.length,
     pricedItemCount,
     unsetPriceCount: products.length - pricedItemCount,
+    budgetPeriod,
+    periodLabel: budgetPeriodLabel(budgetPeriod, now),
+    periodExcludedCount: baseProducts.length - products.length,
     products
   };
 }
@@ -93,8 +126,15 @@ export function groupProductsByCategory(products: Product[]): CategorySummary[] 
 }
 
 export function budgetEvidence(summary: BudgetSummary): string {
-  if (summary.itemCount === 0) return "対象商品がまだありません。";
-  const unsetNote = summary.unsetPriceCount > 0 ? `価格未設定${summary.unsetPriceCount}件を除いた暫定判定です。` : "";
-  if (summary.isOverBudget) return `予算を${Math.abs(summary.remaining).toLocaleString("ja-JP")}円超過しています。${unsetNote}`;
-  return `予算内です。残り${summary.remaining.toLocaleString("ja-JP")}円です。${unsetNote}`;
+  if (summary.itemCount === 0) {
+    if (summary.periodExcludedCount > 0) return `対象期間内の商品がありません。対象期間外の商品${summary.periodExcludedCount}件は含めていません。`;
+    return "対象商品がまだありません。";
+  }
+  const notes = [
+    summary.unsetPriceCount > 0 ? `価格未設定${summary.unsetPriceCount}件を除いた暫定判定です。` : "",
+    summary.periodExcludedCount > 0 ? `対象期間外の商品${summary.periodExcludedCount}件は含めていません。` : ""
+  ].filter(Boolean);
+  const suffix = notes.length > 0 ? notes.join("") : "";
+  if (summary.isOverBudget) return `予算を${Math.abs(summary.remaining).toLocaleString("ja-JP")}円超過しています。${suffix}`;
+  return `予算内です。残り${summary.remaining.toLocaleString("ja-JP")}円です。${suffix}`;
 }
