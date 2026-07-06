@@ -9,6 +9,7 @@ create table if not exists public.products (
   must_have_level text not null default 'nice' check (must_have_level in ('must', 'nice', 'optional')),
   candidate_rank integer not null default 1 check (candidate_rank >= 1),
   product_url text,
+  image_url text,
   purchase_url text,
   purchase_note text,
   planned_purchase_month text,

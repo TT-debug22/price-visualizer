@@ -5,6 +5,7 @@ alter table public.products
   add column if not exists must_have_level text not null default 'nice',
   add column if not exists candidate_rank integer not null default 1,
   add column if not exists product_url text,
+  add column if not exists image_url text,
   add column if not exists purchase_url text,
   add column if not exists purchase_note text,
   add column if not exists planned_purchase_month text;

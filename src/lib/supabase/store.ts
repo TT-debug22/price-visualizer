@@ -31,6 +31,7 @@ interface ProductRow {
   must_have_level: MustHaveLevel | null;
   candidate_rank: number | null;
   product_url: string | null;
+  image_url: string | null;
   purchase_url: string | null;
   purchase_note: string | null;
   planned_purchase_month: string | null;
@@ -170,6 +171,7 @@ function productFromRow(row: ProductRow, offers: Offer[]): Product {
     mustHaveLevel: parseMustHaveLevel(row.must_have_level),
     candidateRank: parseRank(row.candidate_rank),
     productUrl: row.product_url ?? null,
+    imageUrl: row.image_url ?? null,
     purchaseUrl: row.purchase_url ?? null,
     purchaseNote: row.purchase_note ?? null,
     plannedPurchaseMonth: row.planned_purchase_month ?? null,
@@ -392,7 +394,7 @@ export async function createSupabaseProduct(input: Record<string, unknown>): Pro
   const offer: Offer = {
     id: offerId,
     productId,
-    storeName: String(input.storeName ?? "未設定店舗"),
+    storeName: textOrNull(input.storeName) ?? "未設定店舗",
     listedPrice,
     shippingFee,
     discountAmount,
@@ -411,17 +413,19 @@ export async function createSupabaseProduct(input: Record<string, unknown>): Pro
     priceAdapterKey: null
   };
 
-  const validation = validatePriceSnapshot({
-    storeName: offer.storeName,
-    listedPrice: offer.listedPrice,
-    shippingFee: offer.shippingFee,
-    discountAmount: offer.discountAmount,
-    couponDiscount: offer.couponDiscount,
-    pointValue: offer.pointValue,
-    effectivePrice: offer.effectivePrice,
-    stockStatus: offer.stockStatus
-  });
-  if (validation.errors.length > 0) throw new Error(validation.errors.join(" / "));
+  if (listedPrice !== null) {
+    const validation = validatePriceSnapshot({
+      storeName: offer.storeName,
+      listedPrice: offer.listedPrice,
+      shippingFee: offer.shippingFee,
+      discountAmount: offer.discountAmount,
+      couponDiscount: offer.couponDiscount,
+      pointValue: offer.pointValue,
+      effectivePrice: offer.effectivePrice,
+      stockStatus: offer.stockStatus
+    });
+    if (validation.errors.length > 0) throw new Error(validation.errors.join(" / "));
+  }
 
   await assertOk(
     supabase.from("products").insert({
@@ -435,6 +439,7 @@ export async function createSupabaseProduct(input: Record<string, unknown>): Pro
       must_have_level: parseMustHaveLevel(input.mustHaveLevel),
       candidate_rank: parseRank(input.candidateRank),
       product_url: textOrNull(input.productUrl),
+      image_url: textOrNull(input.imageUrl),
       purchase_url: textOrNull(input.purchaseUrl ?? input.productUrl),
       purchase_note: textOrNull(input.purchaseNote),
       planned_purchase_month: textOrNull(input.plannedPurchaseMonth),
@@ -465,6 +470,7 @@ export async function updateSupabaseProduct(productId: string, input: Record<str
   if ("mustHaveLevel" in input) patch.must_have_level = parseMustHaveLevel(input.mustHaveLevel);
   if ("candidateRank" in input) patch.candidate_rank = parseRank(input.candidateRank);
   if ("productUrl" in input) patch.product_url = textOrNull(input.productUrl);
+  if ("imageUrl" in input) patch.image_url = textOrNull(input.imageUrl);
   if ("purchaseUrl" in input) patch.purchase_url = textOrNull(input.purchaseUrl);
   if ("purchaseNote" in input) patch.purchase_note = textOrNull(input.purchaseNote);
   if ("plannedPurchaseMonth" in input) patch.planned_purchase_month = textOrNull(input.plannedPurchaseMonth);

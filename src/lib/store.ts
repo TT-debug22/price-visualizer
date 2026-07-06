@@ -114,6 +114,7 @@ function normalizeProduct(product: Product): Product {
     mustHaveLevel: parseMustHaveLevel(product.mustHaveLevel),
     candidateRank: parseRank(product.candidateRank),
     productUrl: product.productUrl ?? null,
+    imageUrl: product.imageUrl ?? null,
     purchaseUrl: product.purchaseUrl ?? null,
     purchaseNote: product.purchaseNote ?? null,
     plannedPurchaseMonth: product.plannedPurchaseMonth ?? null
@@ -158,7 +159,7 @@ export async function createProduct(input: Record<string, unknown>): Promise<Pri
   const offer: Offer = {
     id: offerId,
     productId,
-    storeName: String(input.storeName ?? "未設定店舗"),
+    storeName: textOrNull(input.storeName) ?? "未設定店舗",
     listedPrice,
     shippingFee,
     discountAmount,
@@ -187,9 +188,11 @@ export async function createProduct(input: Record<string, unknown>): Promise<Pri
     effectivePrice: offer.effectivePrice,
     stockStatus: offer.stockStatus
   };
-  const validation = validatePriceSnapshot(snapshot);
-  if (validation.errors.length > 0) {
-    throw new Error(validation.errors.join(" / "));
+  if (listedPrice !== null) {
+    const validation = validatePriceSnapshot(snapshot);
+    if (validation.errors.length > 0) {
+      throw new Error(validation.errors.join(" / "));
+    }
   }
 
   const product: Product = {
@@ -203,6 +206,7 @@ export async function createProduct(input: Record<string, unknown>): Promise<Pri
     mustHaveLevel: parseMustHaveLevel(input.mustHaveLevel),
     candidateRank: parseRank(input.candidateRank),
     productUrl: textOrNull(input.productUrl),
+    imageUrl: textOrNull(input.imageUrl),
     purchaseUrl: textOrNull(input.purchaseUrl ?? input.productUrl),
     purchaseNote: textOrNull(input.purchaseNote),
     plannedPurchaseMonth: textOrNull(input.plannedPurchaseMonth),
@@ -236,6 +240,7 @@ export async function updateProduct(productId: string, input: Record<string, unk
   if ("mustHaveLevel" in input) product.mustHaveLevel = parseMustHaveLevel(input.mustHaveLevel);
   if ("candidateRank" in input) product.candidateRank = parseRank(input.candidateRank);
   if ("productUrl" in input) product.productUrl = textOrNull(input.productUrl);
+  if ("imageUrl" in input) product.imageUrl = textOrNull(input.imageUrl);
   if ("purchaseUrl" in input) product.purchaseUrl = textOrNull(input.purchaseUrl);
   if ("purchaseNote" in input) product.purchaseNote = textOrNull(input.purchaseNote);
   if ("plannedPurchaseMonth" in input) product.plannedPurchaseMonth = textOrNull(input.plannedPurchaseMonth);

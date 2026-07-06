@@ -45,6 +45,10 @@ describe("PriceApp", () => {
     await screen.findByTestId("product-list");
   }
 
+  async function openPriceDetails() {
+    await userEvent.click(await screen.findByTestId("price-advanced-summary"));
+  }
+
   it("購入予定の合計を初期表示し、第一候補の合計へ切り替えられる", async () => {
     mockFetch(createInitialState());
     render(<PriceApp />);
@@ -61,6 +65,7 @@ describe("PriceApp", () => {
     mockFetch(createInitialState());
     render(<PriceApp />);
     await openPriceTab();
+    await openPriceDetails();
     await userEvent.click(screen.getByTestId("period-30d"));
     expect(screen.getByTestId("mock-chart")).toHaveTextContent("period:30d");
   });
@@ -69,6 +74,7 @@ describe("PriceApp", () => {
     mockFetch(createInitialState());
     render(<PriceApp />);
     await openPriceTab();
+    await openPriceDetails();
     await userEvent.click(screen.getByTestId("price-type-both"));
     expect(screen.getByTestId("mock-chart")).toHaveTextContent("priceType:both");
   });
@@ -77,6 +83,7 @@ describe("PriceApp", () => {
     mockFetch(createInitialState());
     render(<PriceApp />);
     await openPriceTab();
+    await openPriceDetails();
     await userEvent.selectOptions(screen.getByTestId("store-view-select"), "by-store");
     expect(screen.getByTestId("store-picker")).toHaveTextContent("Tokyo Audio");
     expect(screen.getByTestId("mock-chart")).toHaveTextContent("storeView:by-store");
@@ -86,6 +93,7 @@ describe("PriceApp", () => {
     mockFetch(createInitialState());
     render(<PriceApp />);
     await openPriceTab();
+    await openPriceDetails();
     await userEvent.click(await screen.findByTestId("product-card-product-coffee"));
     expect(screen.getByTestId("price-evaluation-label")).toHaveTextContent("履歴不足");
   });
@@ -97,6 +105,7 @@ describe("PriceApp", () => {
     mockFetch(nextState);
     render(<PriceApp />);
     await openPriceTab();
+    await openPriceDetails();
     expect(screen.getByTestId("price-evaluation-label")).toHaveTextContent("価格未設定");
   });
 
@@ -104,6 +113,7 @@ describe("PriceApp", () => {
     mockFetch(createInitialState());
     render(<PriceApp />);
     await openPriceTab();
+    await openPriceDetails();
     const listedPrice = screen.getByTestId("listed-price-input");
     await userEvent.clear(listedPrice);
     await userEvent.type(listedPrice, "23800");

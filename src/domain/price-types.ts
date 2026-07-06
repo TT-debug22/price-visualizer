@@ -77,6 +77,7 @@ export interface Product {
   mustHaveLevel: MustHaveLevel;
   candidateRank: number;
   productUrl?: string | null;
+  imageUrl?: string | null;
   purchaseUrl?: string | null;
   purchaseNote?: string | null;
   plannedPurchaseMonth?: string | null;

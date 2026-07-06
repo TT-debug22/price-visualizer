@@ -15,7 +15,6 @@ import {
   Settings,
   ShoppingCart,
   SlidersHorizontal,
-  Tags,
   TrendingDown,
   TrendingUp,
   Wallet
@@ -69,15 +68,23 @@ const PriceTrendChart = dynamic(() => import("./PriceTrendChart"), {
 const NOW = new Date("2026-07-05T04:00:00.000Z");
 const CLOUD_MODE = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-type AppTab = "overview" | "wishlist" | "compare" | "price" | "settings";
+type AppTab = "overview" | "wishlist" | "price" | "settings";
 
 const APP_TABS: Array<{ key: AppTab; label: string; icon: ComponentType<{ size?: number }> }> = [
   { key: "overview", label: "トップ", icon: LayoutDashboard },
-  { key: "wishlist", label: "欲しいもの", icon: ListChecks },
-  { key: "compare", label: "候補比較", icon: Tags },
-  { key: "price", label: "価格詳細", icon: BarChart3 },
+  { key: "wishlist", label: "リスト", icon: ListChecks },
+  { key: "price", label: "詳細", icon: BarChart3 },
   { key: "settings", label: "設定", icon: Settings }
 ];
+
+const CATEGORY_COLORS = ["#176b87", "#0f766e", "#9a3412", "#7c3aed", "#be123c", "#2563eb", "#ca8a04", "#475569"];
+
+interface CategorySlice {
+  category: string;
+  total: number;
+  count: number;
+  color: string;
+}
 
 class ApiResponseError extends Error {
   status: number;
@@ -92,6 +99,44 @@ class ApiResponseError extends Error {
 
 function toneClass(tone: string): string {
   return `tone-${tone}`;
+}
+
+function categoryKey(product: Product): string {
+  return product.detailCategory || product.category || "未分類";
+}
+
+function categoryColor(category: string): string {
+  let hash = 0;
+  for (const char of category) hash = (hash * 31 + char.charCodeAt(0)) % CATEGORY_COLORS.length;
+  return CATEGORY_COLORS[Math.abs(hash) % CATEGORY_COLORS.length];
+}
+
+function categoryInitial(category: string): string {
+  return Array.from(category || "未").slice(0, 1).join("");
+}
+
+function categorySlices(products: Product[]): CategorySlice[] {
+  const groups = new Map<string, { total: number; count: number }>();
+  for (const product of products) {
+    const key = categoryKey(product);
+    const current = groups.get(key) ?? { total: 0, count: 0 };
+    groups.set(key, { total: current.total + wishlistPrice(product), count: current.count + 1 });
+  }
+  return Array.from(groups.entries())
+    .map(([category, value]) => ({ category, total: value.total, count: value.count, color: categoryColor(category) }))
+    .sort((a, b) => b.total - a.total);
+}
+
+function conicGradient(slices: CategorySlice[], total: number): string {
+  if (slices.length === 0 || total <= 0) return "var(--surface-2)";
+  let cursor = 0;
+  const segments = slices.map((slice) => {
+    const start = cursor;
+    const end = cursor + (slice.total / total) * 100;
+    cursor = end;
+    return `${slice.color} ${start}% ${end}%`;
+  });
+  return `conic-gradient(${segments.join(", ")})`;
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
@@ -228,6 +273,18 @@ function BudgetModeControl({ mode, onChange }: { mode: BudgetViewMode; onChange:
   );
 }
 
+function ProductVisual({ product }: { product: Product }) {
+  const category = categoryKey(product);
+  if (product.imageUrl) {
+    return <img className="product-visual" src={product.imageUrl} alt={`${product.name}の写真`} loading="lazy" />;
+  }
+  return (
+    <span className="product-visual product-visual-fallback" style={{ background: categoryColor(category) }} aria-hidden="true">
+      {categoryInitial(category)}
+    </span>
+  );
+}
+
 function BudgetOverview({
   state,
   mode,
@@ -240,9 +297,10 @@ function BudgetOverview({
   onOpenProduct: (productId: string) => void;
 }) {
   const summary = calculateBudgetSummary(state, mode);
-  const categories = groupProductsByCategory(state.products);
+  const slices = categorySlices(summary.products);
   const usage = summary.budget > 0 ? Math.min(100, Math.round((summary.total / summary.budget) * 100)) : 0;
   const unsetCount = summary.products.filter((product) => wishlistPrice(product) === 0).length;
+  const chartBackground = conicGradient(slices, summary.total);
 
   return (
     <section className="overview-page" aria-label="欲しいものトップ">
@@ -275,10 +333,26 @@ function BudgetOverview({
           <p className="budget-evidence">{budgetEvidence(summary)}</p>
           {unsetCount > 0 && <p className="form-warning">価格未設定の商品が{unsetCount}件あります。合計には0円として入っています。</p>}
         </div>
-        <div className="budget-side">
-          <span className="badge tone-neutral">{BUDGET_PERIOD_LABELS[state.settings.budgetPeriod]}</span>
-          <span className="badge tone-good">{summary.itemCount}件を集計</span>
-          <span className="badge tone-muted">家計簿連携予定</span>
+        <div className="budget-chart-panel" aria-label="ジャンル別の金額内訳">
+          <div className="budget-donut" style={{ background: chartBackground }}>
+            <span>
+              合計
+              <strong>{yen(summary.total)}</strong>
+            </span>
+          </div>
+          <div className="category-legend">
+            {slices.length === 0 ? (
+              <p className="muted">内訳はまだありません。</p>
+            ) : (
+              slices.map((slice) => (
+                <div key={slice.category}>
+                  <span className="category-swatch" style={{ background: slice.color }} />
+                  <span>{slice.category}</span>
+                  <strong>{yen(slice.total)}</strong>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
 
@@ -294,6 +368,7 @@ function BudgetOverview({
             <div className="compact-list" data-testid="budget-product-list">
               {summary.products.slice(0, 6).map((product) => (
                 <button key={product.id} onClick={() => onOpenProduct(product.id)}>
+                  <ProductVisual product={product} />
                   <span>{product.name}</span>
                   <strong>{yen(wishlistPrice(product))}</strong>
                 </button>
@@ -304,14 +379,15 @@ function BudgetOverview({
         <section className="overview-panel">
           <div className="section-heading compact">
             <h2>ジャンル別</h2>
-            <span>{categories.length}分類</span>
+            <span>{slices.length}分類</span>
           </div>
           <div className="category-summary-list">
-            {categories.slice(0, 6).map((category) => (
-              <div key={category.category}>
-                <span>{category.category}</span>
-                <strong>{yen(mode === "planned" ? category.plannedTotal : category.primaryTotal)}</strong>
-                <small>{mode === "planned" ? category.plannedCount : category.primaryCount}件</small>
+            {slices.slice(0, 6).map((slice) => (
+              <div key={slice.category}>
+                <span className="category-swatch" style={{ background: slice.color }} />
+                <span>{slice.category}</span>
+                <strong>{yen(slice.total)}</strong>
+                <small>{slice.count}件</small>
               </div>
             ))}
           </div>
@@ -345,7 +421,10 @@ function WishlistCategoryList({ state, onOpenProduct }: { state: PriceAppState; 
           <article className="category-block" key={category.category} data-testid={`wishlist-category-${category.category}`}>
             <div className="category-header">
               <div>
-                <h2>{category.category}</h2>
+                <h2>
+                  <span className="category-swatch" style={{ background: categoryColor(category.category) }} />
+                  {category.category}
+                </h2>
                 <p className="muted">購入予定 {category.plannedCount}件 / 第一候補 {category.primaryCount}件</p>
               </div>
               <strong>{yen(category.plannedTotal)}</strong>
@@ -353,11 +432,11 @@ function WishlistCategoryList({ state, onOpenProduct }: { state: PriceAppState; 
             <div className="candidate-list">
               {category.products.map((product) => (
                 <button key={product.id} className="candidate-row" onClick={() => onOpenProduct(product.id)}>
-                  <span className="rank-pill">第{product.candidateRank}候補</span>
+                  <ProductVisual product={product} />
                   <span className="candidate-main">
                     <strong>{product.name}</strong>
                     <small>
-                      {WISHLIST_STATUS_LABELS[product.wishlistStatus]} / {WISHLIST_PRIORITY_LABELS[product.priority]} / {MUST_HAVE_LABELS[product.mustHaveLevel]}
+                      第{product.candidateRank}候補 / {WISHLIST_STATUS_LABELS[product.wishlistStatus]}
                     </small>
                   </span>
                   <span className="candidate-price">{yen(wishlistPrice(product))}</span>
@@ -414,26 +493,20 @@ function ProductCard({
   onSelect: () => void;
 }) {
   const metrics = calculatePriceMetrics(product, state.histories, state.settings, NOW);
-  const evaluation = evaluateCurrentPrice(product, state.histories, state.settings, NOW);
-  const points = sparklinePoints(product, state.histories);
 
   return (
     <button className={`product-card ${selected ? "is-selected" : ""}`} onClick={onSelect} data-testid={`product-card-${product.id}`}>
+      <ProductVisual product={product} />
       <span className="card-title">{product.name}</span>
-      <span className="card-meta">
-        {product.detailCategory ?? product.category} / 第{product.candidateRank}候補 / {WISHLIST_STATUS_LABELS[product.wishlistStatus]}
-      </span>
+      <span className="card-meta">{categoryKey(product)}</span>
       <span className="price-row">
         <strong>{yen(metrics.currentEffectivePrice)}</strong>
-        <span className={`badge ${toneClass(evaluation.tone)}`}>{evaluation.label}</span>
+        <span className="badge tone-neutral">{WISHLIST_STATUS_LABELS[product.wishlistStatus]}</span>
       </span>
       <span className="mini-grid">
-        <span>前回比 {changeSummary(metrics.previousChange.amount, metrics.previousChange.rate)}</span>
-        <span>過去最安 {yen(metrics.allTimeLowestEffective?.effectivePrice)}</span>
-        <span>{currentLowestRelationship(product, state.histories, state.settings, NOW)}</span>
+        <span>第{product.candidateRank}候補</span>
         <span>最終確認 {metrics.lastCheckedAt ? new Intl.DateTimeFormat("ja-JP").format(new Date(metrics.lastCheckedAt)) : "未確認"}</span>
       </span>
-      <Sparkline values={points} />
     </button>
   );
 }
@@ -487,111 +560,95 @@ function AddProductForm({ onCreated }: { onCreated: (state: PriceAppState) => vo
     <div className="add-product">
       <button className="icon-button wide" onClick={() => setOpen((value) => !value)} data-testid="add-product-toggle">
         <Plus size={18} />
-        商品追加
+        欲しいものを追加
       </button>
       {open && (
-        <form action={submit} className="stacked-form" data-testid="add-product-form">
+        <form action={submit} className="stacked-form quick-add-form" data-testid="add-product-form">
           <label>
             商品名
-            <input name="name" required placeholder="例: E2Eカメラ" />
+            <input name="name" required placeholder="例: ミラーレスカメラ" />
           </label>
-          <label>
-            カテゴリ
-            <input name="category" defaultValue="未分類" />
-          </label>
-          <label>
-            詳細ジャンル
-            <input name="detailCategory" placeholder="例: ミラーレスカメラ、デスク、イヤホン" />
-          </label>
-          <label>
-            商品URL
-            <input name="productUrl" type="url" placeholder="https://..." />
-          </label>
-          <div className="form-grid">
+          <div className="quick-add-grid">
             <label>
-              ステータス
+              ジャンル
+              <input name="detailCategory" placeholder="例: カメラ、デスク、服" />
+            </label>
+            <label>
+              予定金額
+              <input name="listedPrice" type="number" min="0" placeholder="例: 98000" />
+            </label>
+            <label>
+              予算対象
               <select name="wishlistStatus" defaultValue="planned">
-                {(Object.keys(WISHLIST_STATUS_LABELS) as WishlistStatus[]).map((key) => (
-                  <option key={key} value={key}>
-                    {WISHLIST_STATUS_LABELS[key]}
-                  </option>
-                ))}
+                <option value="planned">購入予定に入れる</option>
+                <option value="candidate">候補として保存</option>
               </select>
-            </label>
-            <label>
-              候補順位
-              <input name="candidateRank" type="number" min="1" defaultValue="1" />
-            </label>
-            <label>
-              優先度
-              <select name="priority" defaultValue="medium">
-                {(Object.keys(WISHLIST_PRIORITY_LABELS) as WishlistPriority[]).map((key) => (
-                  <option key={key} value={key}>
-                    {WISHLIST_PRIORITY_LABELS[key]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              必須度
-              <select name="mustHaveLevel" defaultValue="nice">
-                {(Object.keys(MUST_HAVE_LABELS) as MustHaveLevel[]).map((key) => (
-                  <option key={key} value={key}>
-                    {MUST_HAVE_LABELS[key]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              購入予定月
-              <input name="plannedPurchaseMonth" type="month" />
-            </label>
-            <label>
-              購入先URL
-              <input name="purchaseUrl" type="url" placeholder="https://..." />
             </label>
           </div>
           <label>
-            店舗名
-            <input name="storeName" required placeholder="例: テストストア" />
+            写真URL
+            <input name="imageUrl" type="url" placeholder="https://..." />
           </label>
-          <label>
-            メモ
-            <input name="purchaseNote" placeholder="比較理由、買う条件など" />
-          </label>
-          <div className="form-grid">
+          <details className="advanced-create">
+            <summary>詳細条件を入力する</summary>
+            <div className="form-grid">
+              <label>
+                大カテゴリ
+                <input name="category" defaultValue="未分類" />
+              </label>
+              <label>
+                候補順位
+                <input name="candidateRank" type="number" min="1" defaultValue="1" />
+              </label>
+              <label>
+                商品URL
+                <input name="productUrl" type="url" placeholder="https://..." />
+              </label>
+              <label>
+                購入予定月
+                <input name="plannedPurchaseMonth" type="month" />
+              </label>
+              <label>
+                購入先URL
+                <input name="purchaseUrl" type="url" placeholder="https://..." />
+              </label>
+              <label>
+                店舗名
+                <input name="storeName" placeholder="例: 公式ストア" />
+              </label>
+              <label>
+                送料
+                <input name="shippingFee" type="number" min="0" defaultValue="0" />
+              </label>
+              <label>
+                値引額
+                <input name="discountAmount" type="number" min="0" defaultValue="0" />
+              </label>
+              <label>
+                クーポン
+                <input name="couponDiscount" type="number" min="0" defaultValue="0" />
+              </label>
+              <label>
+                ポイント
+                <input name="pointValue" type="number" min="0" defaultValue="0" />
+              </label>
+              <label>
+                目標価格
+                <input name="targetPrice" type="number" min="0" />
+              </label>
+              <label>
+                設定底値
+                <input name="customFloorPrice" type="number" min="0" />
+              </label>
+            </div>
             <label>
-              表示価格
-              <input name="listedPrice" type="number" min="0" required />
+              メモ
+              <input name="purchaseNote" placeholder="比較理由、買う条件など" />
             </label>
-            <label>
-              送料
-              <input name="shippingFee" type="number" min="0" defaultValue="0" />
-            </label>
-            <label>
-              値引額
-              <input name="discountAmount" type="number" min="0" defaultValue="0" />
-            </label>
-            <label>
-              クーポン
-              <input name="couponDiscount" type="number" min="0" defaultValue="0" />
-            </label>
-            <label>
-              ポイント
-              <input name="pointValue" type="number" min="0" defaultValue="0" />
-            </label>
-            <label>
-              目標価格
-              <input name="targetPrice" type="number" min="0" />
-            </label>
-            <label>
-              設定底値
-              <input name="customFloorPrice" type="number" min="0" />
-            </label>
-          </div>
+          </details>
           {error && <p className="form-error">{error}</p>}
           <button className="primary-button" type="submit">
-            作成
+            追加
           </button>
         </form>
       )}
@@ -705,10 +762,6 @@ function ProductPriceSettings({ product, onUpdated }: { product: Product; onUpda
       </div>
       <form action={submit} className="inline-settings product-edit-form" data-testid="target-form">
         <label>
-          カテゴリ
-          <input name="category" defaultValue={product.category} />
-        </label>
-        <label>
           詳細ジャンル
           <input name="detailCategory" defaultValue={product.detailCategory ?? ""} />
         </label>
@@ -727,49 +780,62 @@ function ProductPriceSettings({ product, onUpdated }: { product: Product; onUpda
           <input name="candidateRank" type="number" min="1" defaultValue={product.candidateRank} />
         </label>
         <label>
-          優先度
-          <select name="priority" defaultValue={product.priority}>
-            {(Object.keys(WISHLIST_PRIORITY_LABELS) as WishlistPriority[]).map((key) => (
-              <option key={key} value={key}>
-                {WISHLIST_PRIORITY_LABELS[key]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          必須度
-          <select name="mustHaveLevel" defaultValue={product.mustHaveLevel}>
-            {(Object.keys(MUST_HAVE_LABELS) as MustHaveLevel[]).map((key) => (
-              <option key={key} value={key}>
-                {MUST_HAVE_LABELS[key]}
-              </option>
-            ))}
-          </select>
+          写真URL
+          <input name="imageUrl" type="url" defaultValue={product.imageUrl ?? ""} />
         </label>
         <label>
           商品URL
           <input name="productUrl" type="url" defaultValue={product.productUrl ?? ""} />
         </label>
         <label>
-          購入先URL
-          <input name="purchaseUrl" type="url" defaultValue={product.purchaseUrl ?? ""} />
-        </label>
-        <label>
           購入予定月
           <input name="plannedPurchaseMonth" type="month" defaultValue={product.plannedPurchaseMonth ?? ""} />
-        </label>
-        <label>
-          目標価格
-          <input name="targetPrice" type="number" min="0" defaultValue={product.targetPrice ?? ""} data-testid="target-price-input" />
-        </label>
-        <label>
-          ユーザー設定底値
-          <input name="customFloorPrice" type="number" min="0" defaultValue={product.customFloorPrice ?? ""} data-testid="floor-price-input" />
         </label>
         <label>
           メモ
           <input name="purchaseNote" defaultValue={product.purchaseNote ?? ""} />
         </label>
+        <details className="advanced-edit">
+          <summary>詳細条件</summary>
+          <div className="form-grid">
+            <label>
+              大カテゴリ
+              <input name="category" defaultValue={product.category} />
+            </label>
+            <label>
+              優先度
+              <select name="priority" defaultValue={product.priority}>
+                {(Object.keys(WISHLIST_PRIORITY_LABELS) as WishlistPriority[]).map((key) => (
+                  <option key={key} value={key}>
+                    {WISHLIST_PRIORITY_LABELS[key]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              必須度
+              <select name="mustHaveLevel" defaultValue={product.mustHaveLevel}>
+                {(Object.keys(MUST_HAVE_LABELS) as MustHaveLevel[]).map((key) => (
+                  <option key={key} value={key}>
+                    {MUST_HAVE_LABELS[key]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              購入先URL
+              <input name="purchaseUrl" type="url" defaultValue={product.purchaseUrl ?? ""} />
+            </label>
+            <label>
+              目標価格
+              <input name="targetPrice" type="number" min="0" defaultValue={product.targetPrice ?? ""} data-testid="target-price-input" />
+            </label>
+            <label>
+              ユーザー設定底値
+              <input name="customFloorPrice" type="number" min="0" defaultValue={product.customFloorPrice ?? ""} data-testid="floor-price-input" />
+            </label>
+          </div>
+        </details>
         <button type="submit" className="icon-button save-edit-button" data-testid="save-target-price">
           <Save size={16} />
           保存
@@ -1122,16 +1188,17 @@ function ProductDetail({ product, state, onStateChange }: { product: Product; st
   return (
     <article className="detail">
       <div className="detail-header">
-        <div>
-          <p className="eyebrow">商品詳細</p>
-          <h1>{product.name}</h1>
-          <div className="label-list detail-labels">
-            <span className="small-label">{product.category}</span>
-            <span className="small-label">{product.detailCategory ?? "未分類"}</span>
-            <span className="small-label">第{product.candidateRank}候補</span>
-            <span className="small-label">{WISHLIST_STATUS_LABELS[product.wishlistStatus]}</span>
-            <span className="small-label">優先度 {WISHLIST_PRIORITY_LABELS[product.priority]}</span>
-            <span className="small-label">{MUST_HAVE_LABELS[product.mustHaveLevel]}</span>
+        <div className="detail-title">
+          <ProductVisual product={product} />
+          <div>
+            <p className="eyebrow">商品詳細</p>
+            <h1>{product.name}</h1>
+            <div className="label-list detail-labels">
+              <span className="small-label">{product.category}</span>
+              <span className="small-label">{product.detailCategory ?? "未分類"}</span>
+              <span className="small-label">第{product.candidateRank}候補</span>
+              <span className="small-label">{WISHLIST_STATUS_LABELS[product.wishlistStatus]}</span>
+            </div>
           </div>
         </div>
         <div className="header-price">
@@ -1140,39 +1207,44 @@ function ProductDetail({ product, state, onStateChange }: { product: Product; st
           <span>{currentLowestRelationship(product, state.histories, state.settings, NOW)}</span>
         </div>
       </div>
-      <PriceSummary product={product} state={state} />
-      <EvaluationPanel product={product} state={state} />
       <ProductPriceSettings product={product} onUpdated={onStateChange} />
-      <ManualPriceForm product={product} state={state} onRecorded={onStateChange} />
-      <ChartControls
-        product={product}
-        state={state}
-        period={period}
-        setPeriod={setPeriod}
-        priceType={priceType}
-        setPriceType={setPriceType}
-        storeViewMode={storeViewMode}
-        setStoreViewMode={setStoreViewMode}
-        selectedStores={selectedStores}
-        setSelectedStores={setSelectedStores}
-        dailyRepresentativeMode={dailyRepresentativeMode}
-        setDailyRepresentativeMode={setDailyRepresentativeMode}
-      />
-      <div className="chart-count" data-testid="chart-point-count">
-        グラフ表示中の履歴: {chartData.length}点
-      </div>
-      <PriceTrendChart
-        product={product}
-        histories={state.histories}
-        settings={state.settings}
-        period={period}
-        priceType={priceType}
-        storeViewMode={storeViewMode}
-        selectedStores={selectedStores}
-        dailyRepresentativeMode={dailyRepresentativeMode}
-        now={NOW}
-      />
-      <HistoryTable product={product} state={state} onUpdated={onStateChange} />
+      <details className="advanced-panel" data-testid="price-advanced-details">
+        <summary data-testid="price-advanced-summary">価格推移・履歴を確認する</summary>
+        <div className="advanced-panel-body">
+          <PriceSummary product={product} state={state} />
+          <EvaluationPanel product={product} state={state} />
+          <ManualPriceForm product={product} state={state} onRecorded={onStateChange} />
+          <ChartControls
+            product={product}
+            state={state}
+            period={period}
+            setPeriod={setPeriod}
+            priceType={priceType}
+            setPriceType={setPriceType}
+            storeViewMode={storeViewMode}
+            setStoreViewMode={setStoreViewMode}
+            selectedStores={selectedStores}
+            setSelectedStores={setSelectedStores}
+            dailyRepresentativeMode={dailyRepresentativeMode}
+            setDailyRepresentativeMode={setDailyRepresentativeMode}
+          />
+          <div className="chart-count" data-testid="chart-point-count">
+            グラフ表示中の履歴: {chartData.length}点
+          </div>
+          <PriceTrendChart
+            product={product}
+            histories={state.histories}
+            settings={state.settings}
+            period={period}
+            priceType={priceType}
+            storeViewMode={storeViewMode}
+            selectedStores={selectedStores}
+            dailyRepresentativeMode={dailyRepresentativeMode}
+            now={NOW}
+          />
+          <HistoryTable product={product} state={state} onUpdated={onStateChange} />
+        </div>
+      </details>
     </article>
   );
 }
@@ -1348,10 +1420,7 @@ export function PriceApp() {
       <AppTabs activeTab={activeTab} onChange={setActiveTab} />
 
       {activeTab === "overview" && (
-        <>
-          <BudgetOverview state={state} mode={budgetMode} onModeChange={setBudgetMode} onOpenProduct={openProduct} />
-          <Dashboard state={state} onSelectProduct={openProduct} />
-        </>
+        <BudgetOverview state={state} mode={budgetMode} onModeChange={setBudgetMode} onOpenProduct={openProduct} />
       )}
 
       {activeTab === "wishlist" && (
@@ -1365,8 +1434,6 @@ export function PriceApp() {
           <WishlistCategoryList state={state} onOpenProduct={openProduct} />
         </div>
       )}
-
-      {activeTab === "compare" && <CandidateComparison state={state} onOpenProduct={openProduct} />}
 
       {activeTab === "price" && (
         <div className="workspace">
