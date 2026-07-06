@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import PriceApp from "../PriceApp";
 import { createInitialState } from "@/domain/fixtures";
@@ -40,10 +40,27 @@ describe("PriceApp", () => {
     vi.restoreAllMocks();
   });
 
+  async function openPriceTab() {
+    await userEvent.click(await screen.findByTestId("tab-price"));
+    await screen.findByTestId("product-list");
+  }
+
+  it("購入予定の合計を初期表示し、第一候補の合計へ切り替えられる", async () => {
+    mockFetch(createInitialState());
+    render(<PriceApp />);
+    expect(await screen.findByText("購入予定の予算チェック")).toBeInTheDocument();
+    const plannedList = screen.getByTestId("budget-product-list");
+    expect(plannedList).toHaveTextContent("ノイズキャンセリングヘッドホン");
+    expect(within(plannedList).queryByText("27インチ 4K モニター")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("budget-mode-primary"));
+    expect(await screen.findByText("第一候補の予算チェック")).toBeInTheDocument();
+    expect(screen.getByTestId("budget-product-list")).toHaveTextContent("27インチ 4K モニター");
+  });
+
   it("期間切り替えができる", async () => {
     mockFetch(createInitialState());
     render(<PriceApp />);
-    await screen.findByTestId("product-list");
+    await openPriceTab();
     await userEvent.click(screen.getByTestId("period-30d"));
     expect(screen.getByTestId("mock-chart")).toHaveTextContent("period:30d");
   });
@@ -51,7 +68,7 @@ describe("PriceApp", () => {
   it("価格種別切り替えができる", async () => {
     mockFetch(createInitialState());
     render(<PriceApp />);
-    await screen.findByTestId("product-list");
+    await openPriceTab();
     await userEvent.click(screen.getByTestId("price-type-both"));
     expect(screen.getByTestId("mock-chart")).toHaveTextContent("priceType:both");
   });
@@ -59,7 +76,7 @@ describe("PriceApp", () => {
   it("店舗切り替えができる", async () => {
     mockFetch(createInitialState());
     render(<PriceApp />);
-    await screen.findByTestId("product-list");
+    await openPriceTab();
     await userEvent.selectOptions(screen.getByTestId("store-view-select"), "by-store");
     expect(screen.getByTestId("store-picker")).toHaveTextContent("Tokyo Audio");
     expect(screen.getByTestId("mock-chart")).toHaveTextContent("storeView:by-store");
@@ -68,6 +85,7 @@ describe("PriceApp", () => {
   it("履歴不足表示を出す", async () => {
     mockFetch(createInitialState());
     render(<PriceApp />);
+    await openPriceTab();
     await userEvent.click(await screen.findByTestId("product-card-product-coffee"));
     expect(screen.getByTestId("price-evaluation-label")).toHaveTextContent("履歴不足");
   });
@@ -78,14 +96,14 @@ describe("PriceApp", () => {
     nextState.products[0].offers[0].effectivePrice = null;
     mockFetch(nextState);
     render(<PriceApp />);
-    await screen.findByTestId("product-list");
+    await openPriceTab();
     expect(screen.getByTestId("price-evaluation-label")).toHaveTextContent("価格未設定");
   });
 
   it("価格更新前後の差額を表示する", async () => {
     mockFetch(createInitialState());
     render(<PriceApp />);
-    await screen.findByTestId("product-list");
+    await openPriceTab();
     const listedPrice = screen.getByTestId("listed-price-input");
     await userEvent.clear(listedPrice);
     await userEvent.type(listedPrice, "23800");

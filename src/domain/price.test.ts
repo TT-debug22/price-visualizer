@@ -19,6 +19,7 @@ import {
   validLowestHistories
 } from "./price-analytics";
 import { evaluateCurrentPrice } from "./price-evaluation";
+import { calculateBudgetSummary, groupProductsByCategory, selectedBudgetProducts } from "./wishlist";
 
 const NOW = new Date("2026-07-05T04:00:00.000Z");
 
@@ -160,5 +161,28 @@ describe("価格ドメインロジック", () => {
     const product = app.products[0];
     expect(determineCurrentOffer(product)?.id).toBe("offer-headphones-a");
     expect(offerToSnapshot(determineCurrentOffer(product)!).effectivePrice).toBe(21800);
+  });
+
+  it("購入予定商品の合計を計算する", () => {
+    const app = state();
+    const summary = calculateBudgetSummary(app, "planned");
+    expect(summary.itemCount).toBe(2);
+    expect(summary.total).toBe(26300);
+    expect(selectedBudgetProducts(app.products, "planned").map((product) => product.id)).toEqual(["product-headphones", "product-coffee"]);
+  });
+
+  it("第一候補商品の合計を計算する", () => {
+    const app = state();
+    const summary = calculateBudgetSummary(app, "primary");
+    expect(summary.itemCount).toBe(2);
+    expect(summary.total).toBe(60400);
+    expect(selectedBudgetProducts(app.products, "primary").map((product) => product.id)).toEqual(["product-headphones", "product-monitor"]);
+  });
+
+  it("詳細ジャンルごとに候補を並べる", () => {
+    const app = state();
+    const categories = groupProductsByCategory(app.products);
+    expect(categories.map((category) => category.category)).toContain("オーディオ");
+    expect(categories.find((category) => category.category === "モニター")?.primaryTotal).toBe(38600);
   });
 });

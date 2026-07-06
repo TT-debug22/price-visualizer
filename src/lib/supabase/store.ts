@@ -1,5 +1,20 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Offer, PriceAppState, PriceHistory, PriceSnapshot, Product, RecordSource, StockStatus, UserPriceSettings } from "@/domain/price-types";
+import type {
+  BudgetPeriod,
+  BudgetViewMode,
+  LedgerEntry,
+  MustHaveLevel,
+  Offer,
+  PriceAppState,
+  PriceHistory,
+  PriceSnapshot,
+  Product,
+  RecordSource,
+  StockStatus,
+  UserPriceSettings,
+  WishlistPriority,
+  WishlistStatus
+} from "@/domain/price-types";
 import { DEFAULT_PRICE_SETTINGS } from "@/domain/price-types";
 import { calculateEffectivePrice, toNumberOrNull, validatePriceSnapshot } from "@/domain/price-calculations";
 import { createPriceHistory, latestHistoryForOffer, shouldCreatePriceHistory } from "@/domain/price-history";
@@ -10,6 +25,15 @@ interface ProductRow {
   user_id: string;
   name: string;
   category: string;
+  detail_category: string | null;
+  wishlist_status: WishlistStatus | null;
+  priority: WishlistPriority | null;
+  must_have_level: MustHaveLevel | null;
+  candidate_rank: number | null;
+  product_url: string | null;
+  purchase_url: string | null;
+  purchase_note: string | null;
+  planned_purchase_month: string | null;
   reference_price: number | null;
   target_price: number | null;
   custom_floor_price: number | null;
@@ -72,6 +96,22 @@ interface SettingsRow {
   preferred_chart_price_type: UserPriceSettings["preferredChartPriceType"];
   preferred_chart_period: UserPriceSettings["preferredChartPeriod"];
   stale_price_check_days: number;
+  wishlist_budget: number | null;
+  budget_period: BudgetPeriod | null;
+  default_budget_view_mode: BudgetViewMode | null;
+}
+
+interface LedgerEntryRow {
+  id: string;
+  user_id: string;
+  product_id: string | null;
+  title: string;
+  amount: number;
+  entry_type: LedgerEntry["entryType"];
+  category: string;
+  occurred_on: string;
+  note: string | null;
+  created_at: string;
 }
 
 function newId(prefix: string): string {
@@ -83,12 +123,56 @@ function parseStockStatus(value: unknown): StockStatus {
   return "in_stock";
 }
 
+function parseWishlistStatus(value: unknown): WishlistStatus {
+  if (value === "planned" || value === "purchased" || value === "on_hold" || value === "rejected") return value;
+  return "candidate";
+}
+
+function parseWishlistPriority(value: unknown): WishlistPriority {
+  if (value === "high" || value === "low") return value;
+  return "medium";
+}
+
+function parseMustHaveLevel(value: unknown): MustHaveLevel {
+  if (value === "must" || value === "optional") return value;
+  return "nice";
+}
+
+function parseBudgetViewMode(value: unknown): BudgetViewMode {
+  return value === "primary" ? "primary" : "planned";
+}
+
+function parseBudgetPeriod(value: unknown): BudgetPeriod {
+  if (value === "monthly" || value === "yearly") return value;
+  return "one_time";
+}
+
+function parseRank(value: unknown): number {
+  const rank = Math.trunc(toNumberOrNull(String(value ?? "")) ?? 1);
+  return Number.isFinite(rank) && rank > 0 ? rank : 1;
+}
+
+function textOrNull(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function productFromRow(row: ProductRow, offers: Offer[]): Product {
   return {
     id: row.id,
     userId: row.user_id,
     name: row.name,
     category: row.category,
+    detailCategory: row.detail_category ?? row.category,
+    wishlistStatus: parseWishlistStatus(row.wishlist_status),
+    priority: parseWishlistPriority(row.priority),
+    mustHaveLevel: parseMustHaveLevel(row.must_have_level),
+    candidateRank: parseRank(row.candidate_rank),
+    productUrl: row.product_url ?? null,
+    purchaseUrl: row.purchase_url ?? null,
+    purchaseNote: row.purchase_note ?? null,
+    plannedPurchaseMonth: row.planned_purchase_month ?? null,
     referencePrice: row.reference_price,
     targetPrice: row.target_price,
     customFloorPrice: row.custom_floor_price,
@@ -157,7 +241,25 @@ function settingsFromRow(row: SettingsRow | null, userId: string): UserPriceSett
     largeDropPercentageThreshold: row.large_drop_percentage_threshold,
     preferredChartPriceType: row.preferred_chart_price_type,
     preferredChartPeriod: row.preferred_chart_period,
-    stalePriceCheckDays: row.stale_price_check_days
+    stalePriceCheckDays: row.stale_price_check_days,
+    wishlistBudget: row.wishlist_budget ?? DEFAULT_PRICE_SETTINGS.wishlistBudget,
+    budgetPeriod: parseBudgetPeriod(row.budget_period),
+    defaultBudgetViewMode: parseBudgetViewMode(row.default_budget_view_mode)
+  };
+}
+
+function ledgerEntryFromRow(row: LedgerEntryRow): LedgerEntry {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    productId: row.product_id,
+    title: row.title,
+    amount: row.amount,
+    entryType: row.entry_type,
+    category: row.category,
+    occurredOn: row.occurred_on,
+    note: row.note,
+    createdAt: row.created_at
   };
 }
 
@@ -230,19 +332,30 @@ async function ensureSettings(supabase: SupabaseClient, userId: string): Promise
     large_drop_percentage_threshold: defaults.largeDropPercentageThreshold,
     preferred_chart_price_type: defaults.preferredChartPriceType,
     preferred_chart_period: defaults.preferredChartPeriod,
-    stale_price_check_days: defaults.stalePriceCheckDays
+    stale_price_check_days: defaults.stalePriceCheckDays,
+    wishlist_budget: defaults.wishlistBudget,
+    budget_period: defaults.budgetPeriod,
+    default_budget_view_mode: defaults.defaultBudgetViewMode
   };
   await assertOk(supabase.from("user_price_settings").insert(row).select("*").single());
   return { ...defaults, userId };
 }
 
+async function readLedgerRows(supabase: SupabaseClient, userId: string): Promise<LedgerEntryRow[]> {
+  const { data, error } = await supabase.from("ledger_entries").select("*").eq("user_id", userId).order("occurred_on", { ascending: false }).returns<LedgerEntryRow[]>();
+  if (!error) return data ?? [];
+  if (error.message.includes("ledger_entries") || error.message.includes("schema cache")) return [];
+  throw new Error(error.message);
+}
+
 export async function readSupabaseState(): Promise<PriceAppState> {
   const supabase = await createSupabaseServerClient();
   const userId = await getAuthenticatedUserId();
-  const [productRows, offerRows, historyRows, settings] = await Promise.all([
+  const [productRows, offerRows, historyRows, ledgerRows, settings] = await Promise.all([
     assertOk(supabase.from("products").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).returns<ProductRow[]>()),
     assertOk(supabase.from("offers").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).returns<OfferRow[]>()),
     assertOk(supabase.from("price_histories").select("*").eq("user_id", userId).order("recorded_at", { ascending: true }).returns<HistoryRow[]>()),
+    readLedgerRows(supabase, userId),
     ensureSettings(supabase, userId)
   ]);
 
@@ -259,7 +372,8 @@ export async function readSupabaseState(): Promise<PriceAppState> {
     userId,
     products: products.map((row) => productFromRow(row, offersByProduct.get(row.id) ?? [])),
     histories: histories.map(historyFromRow),
-    settings
+    settings,
+    ledgerEntries: (ledgerRows ?? []).map(ledgerEntryFromRow)
   };
 }
 
@@ -315,6 +429,15 @@ export async function createSupabaseProduct(input: Record<string, unknown>): Pro
       user_id: userId,
       name: String(input.name ?? "新しい商品"),
       category: String(input.category ?? "未分類"),
+      detail_category: String(input.detailCategory ?? input.category ?? "未分類"),
+      wishlist_status: parseWishlistStatus(input.wishlistStatus),
+      priority: parseWishlistPriority(input.priority),
+      must_have_level: parseMustHaveLevel(input.mustHaveLevel),
+      candidate_rank: parseRank(input.candidateRank),
+      product_url: textOrNull(input.productUrl),
+      purchase_url: textOrNull(input.purchaseUrl ?? input.productUrl),
+      purchase_note: textOrNull(input.purchaseNote),
+      planned_purchase_month: textOrNull(input.plannedPurchaseMonth),
       reference_price: toNumberOrNull(String(input.referencePrice ?? "")),
       target_price: toNumberOrNull(String(input.targetPrice ?? "")),
       custom_floor_price: toNumberOrNull(String(input.customFloorPrice ?? "")),
@@ -335,6 +458,16 @@ export async function updateSupabaseProduct(productId: string, input: Record<str
   if ("targetPrice" in input) patch.target_price = toNumberOrNull(String(input.targetPrice ?? ""));
   if ("customFloorPrice" in input) patch.custom_floor_price = toNumberOrNull(String(input.customFloorPrice ?? ""));
   if ("referencePrice" in input) patch.reference_price = toNumberOrNull(String(input.referencePrice ?? ""));
+  if ("category" in input) patch.category = String(input.category ?? "未分類");
+  if ("detailCategory" in input) patch.detail_category = String(input.detailCategory ?? "");
+  if ("wishlistStatus" in input) patch.wishlist_status = parseWishlistStatus(input.wishlistStatus);
+  if ("priority" in input) patch.priority = parseWishlistPriority(input.priority);
+  if ("mustHaveLevel" in input) patch.must_have_level = parseMustHaveLevel(input.mustHaveLevel);
+  if ("candidateRank" in input) patch.candidate_rank = parseRank(input.candidateRank);
+  if ("productUrl" in input) patch.product_url = textOrNull(input.productUrl);
+  if ("purchaseUrl" in input) patch.purchase_url = textOrNull(input.purchaseUrl);
+  if ("purchaseNote" in input) patch.purchase_note = textOrNull(input.purchaseNote);
+  if ("plannedPurchaseMonth" in input) patch.planned_purchase_month = textOrNull(input.plannedPurchaseMonth);
   if ("calculationOfferId" in input) patch.calculation_offer_id = String(input.calculationOfferId ?? "");
 
   await assertOk(supabase.from("products").update(patch).eq("id", productId).eq("user_id", userId));
@@ -444,7 +577,8 @@ export async function updateSupabaseSettings(input: Record<string, unknown>): Pr
     nearLowestPercentageThreshold: "near_lowest_percentage_threshold",
     largeDropAbsoluteThreshold: "large_drop_absolute_threshold",
     largeDropPercentageThreshold: "large_drop_percentage_threshold",
-    stalePriceCheckDays: "stale_price_check_days"
+    stalePriceCheckDays: "stale_price_check_days",
+    wishlistBudget: "wishlist_budget"
   } as const;
   for (const [from, to] of Object.entries(mappings)) {
     if (from in input) {
@@ -454,6 +588,8 @@ export async function updateSupabaseSettings(input: Record<string, unknown>): Pr
   }
   if (input.preferredChartPeriod) patch.preferred_chart_period = String(input.preferredChartPeriod);
   if (input.preferredChartPriceType) patch.preferred_chart_price_type = String(input.preferredChartPriceType);
+  if (input.budgetPeriod) patch.budget_period = parseBudgetPeriod(input.budgetPeriod);
+  if (input.defaultBudgetViewMode) patch.default_budget_view_mode = parseBudgetViewMode(input.defaultBudgetViewMode);
   await assertOk(supabase.from("user_price_settings").update(patch).eq("user_id", userId));
   return readSupabaseState();
 }

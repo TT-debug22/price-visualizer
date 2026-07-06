@@ -175,6 +175,10 @@ h2 {
 .form-panel,
 .history-panel,
 .evaluation-panel,
+.overview-panel,
+.budget-hero,
+.category-block,
+.comparison-panel,
 .chart-shell,
 .empty-chart,
 .add-product,
@@ -183,6 +187,229 @@ h2 {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.app-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 16px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.app-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 8px 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.app-tabs button.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.tab-page {
+  display: grid;
+  gap: 14px;
+}
+
+.overview-page,
+.wishlist-page,
+.compare-page {
+  display: grid;
+  gap: 14px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-heading.compact {
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.budget-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 14px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.budget-main {
+  display: grid;
+  gap: 12px;
+}
+
+.budget-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px;
+}
+
+.budget-amounts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.budget-amounts div {
+  display: grid;
+  gap: 3px;
+  min-height: 74px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.budget-amounts span,
+.budget-evidence,
+.category-summary-list small {
+  color: var(--muted);
+}
+
+.budget-amounts strong {
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+
+.budget-meter {
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.budget-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-2);
+}
+
+.overview-grid,
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.overview-panel,
+.category-block,
+.comparison-panel {
+  padding: 14px;
+}
+
+.compact-list,
+.category-summary-list,
+.candidate-list,
+.comparison-table {
+  display: grid;
+  gap: 8px;
+}
+
+.compact-list button,
+.candidate-row,
+.comparison-table button {
+  display: grid;
+  align-items: center;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 10px;
+  text-align: left;
+}
+
+.compact-list button {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.category-summary-list div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.category-summary-list div:last-child {
+  border-bottom: 0;
+}
+
+.category-list {
+  display: grid;
+  gap: 12px;
+}
+
+.category-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.candidate-row {
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.candidate-main {
+  display: grid;
+  gap: 3px;
+}
+
+.candidate-main small {
+  color: var(--muted);
+}
+
+.candidate-price {
+  font-weight: 700;
+}
+
+.rank-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.comparison-panel h2 {
+  margin-bottom: 10px;
+}
+
+.comparison-table button {
+  grid-template-columns: 82px minmax(0, 1fr) auto 86px;
+  gap: 8px;
+}
+
+.detail-labels {
+  margin-top: 8px;
 }
 
 .dashboard-bucket {
@@ -641,6 +868,11 @@ th {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .overview-grid,
+  .comparison-grid {
+    grid-template-columns: 1fr;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
   }
@@ -669,6 +901,8 @@ th {
 
   .dashboard,
   .summary-grid,
+  .budget-hero,
+  .budget-amounts,
   .form-grid,
   .preview-grid {
     grid-template-columns: 1fr;
@@ -680,5 +914,20 @@ th {
 
   .segmented button {
     flex: 1 1 72px;
+  }
+
+  .section-heading,
+  .category-header {
+    display: grid;
+  }
+
+  .candidate-row,
+  .comparison-table button,
+  .category-summary-list div {
+    grid-template-columns: 1fr;
+  }
+
+  .candidate-price {
+    justify-self: start;
   }
 }

@@ -1,6 +1,20 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { Offer, PriceAppState, PriceHistory, PriceSnapshot, Product, RecordSource, StockStatus } from "@/domain/price-types";
+import type {
+  BudgetPeriod,
+  BudgetViewMode,
+  MustHaveLevel,
+  Offer,
+  PriceAppState,
+  PriceHistory,
+  PriceSnapshot,
+  Product,
+  RecordSource,
+  StockStatus,
+  WishlistPriority,
+  WishlistStatus
+} from "@/domain/price-types";
+import { DEFAULT_PRICE_SETTINGS } from "@/domain/price-types";
 import { createInitialState } from "@/domain/fixtures";
 import { calculateEffectivePrice, toNumberOrNull, validatePriceSnapshot } from "@/domain/price-calculations";
 import { createPriceHistory, latestHistoryForOffer, shouldCreatePriceHistory } from "@/domain/price-history";
@@ -25,11 +39,11 @@ export async function readState(): Promise<PriceAppState> {
   await ensureDataDir();
   try {
     const raw = await fs.readFile(dataFile, "utf8");
-    return JSON.parse(raw) as PriceAppState;
+    return normalizeState(JSON.parse(raw) as PriceAppState);
   } catch (error) {
     const state = createInitialState();
     await writeState(state);
-    return state;
+    return normalizeState(state);
   }
 }
 
@@ -54,6 +68,73 @@ function newId(prefix: string): string {
 function parseStockStatus(value: unknown): StockStatus {
   if (value === "out_of_stock" || value === "unknown" || value === "preorder") return value;
   return "in_stock";
+}
+
+function parseWishlistStatus(value: unknown): WishlistStatus {
+  if (value === "planned" || value === "purchased" || value === "on_hold" || value === "rejected") return value;
+  return "candidate";
+}
+
+function parseWishlistPriority(value: unknown): WishlistPriority {
+  if (value === "high" || value === "low") return value;
+  return "medium";
+}
+
+function parseMustHaveLevel(value: unknown): MustHaveLevel {
+  if (value === "must" || value === "optional") return value;
+  return "nice";
+}
+
+function parseBudgetViewMode(value: unknown): BudgetViewMode {
+  return value === "primary" ? "primary" : "planned";
+}
+
+function parseBudgetPeriod(value: unknown): BudgetPeriod {
+  if (value === "monthly" || value === "yearly") return value;
+  return "one_time";
+}
+
+function parseRank(value: unknown): number {
+  const rank = Math.trunc(toNumberOrNull(String(value ?? "")) ?? 1);
+  return Number.isFinite(rank) && rank > 0 ? rank : 1;
+}
+
+function textOrNull(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeProduct(product: Product): Product {
+  return {
+    ...product,
+    detailCategory: product.detailCategory ?? product.category ?? "未分類",
+    wishlistStatus: parseWishlistStatus(product.wishlistStatus),
+    priority: parseWishlistPriority(product.priority),
+    mustHaveLevel: parseMustHaveLevel(product.mustHaveLevel),
+    candidateRank: parseRank(product.candidateRank),
+    productUrl: product.productUrl ?? null,
+    purchaseUrl: product.purchaseUrl ?? null,
+    purchaseNote: product.purchaseNote ?? null,
+    plannedPurchaseMonth: product.plannedPurchaseMonth ?? null
+  };
+}
+
+function normalizeState(state: PriceAppState): PriceAppState {
+  return {
+    ...state,
+    products: state.products.map(normalizeProduct),
+    histories: state.histories ?? [],
+    ledgerEntries: state.ledgerEntries ?? [],
+    settings: {
+      ...DEFAULT_PRICE_SETTINGS,
+      ...state.settings,
+      userId: state.userId,
+      wishlistBudget: state.settings?.wishlistBudget ?? DEFAULT_PRICE_SETTINGS.wishlistBudget,
+      budgetPeriod: parseBudgetPeriod(state.settings?.budgetPeriod),
+      defaultBudgetViewMode: parseBudgetViewMode(state.settings?.defaultBudgetViewMode)
+    }
+  };
 }
 
 export async function createProduct(input: Record<string, unknown>): Promise<PriceAppState> {
@@ -116,6 +197,15 @@ export async function createProduct(input: Record<string, unknown>): Promise<Pri
     userId: state.userId,
     name: String(input.name ?? "新しい商品"),
     category: String(input.category ?? "未分類"),
+    detailCategory: String(input.detailCategory ?? input.category ?? "未分類"),
+    wishlistStatus: parseWishlistStatus(input.wishlistStatus),
+    priority: parseWishlistPriority(input.priority),
+    mustHaveLevel: parseMustHaveLevel(input.mustHaveLevel),
+    candidateRank: parseRank(input.candidateRank),
+    productUrl: textOrNull(input.productUrl),
+    purchaseUrl: textOrNull(input.purchaseUrl ?? input.productUrl),
+    purchaseNote: textOrNull(input.purchaseNote),
+    plannedPurchaseMonth: textOrNull(input.plannedPurchaseMonth),
     referencePrice: toNumberOrNull(String(input.referencePrice ?? "")),
     targetPrice: toNumberOrNull(String(input.targetPrice ?? "")),
     customFloorPrice: toNumberOrNull(String(input.customFloorPrice ?? "")),
@@ -139,6 +229,16 @@ export async function updateProduct(productId: string, input: Record<string, unk
   if ("targetPrice" in input) product.targetPrice = toNumberOrNull(String(input.targetPrice ?? ""));
   if ("customFloorPrice" in input) product.customFloorPrice = toNumberOrNull(String(input.customFloorPrice ?? ""));
   if ("referencePrice" in input) product.referencePrice = toNumberOrNull(String(input.referencePrice ?? ""));
+  if ("category" in input) product.category = String(input.category ?? "未分類");
+  if ("detailCategory" in input) product.detailCategory = String(input.detailCategory ?? product.category);
+  if ("wishlistStatus" in input) product.wishlistStatus = parseWishlistStatus(input.wishlistStatus);
+  if ("priority" in input) product.priority = parseWishlistPriority(input.priority);
+  if ("mustHaveLevel" in input) product.mustHaveLevel = parseMustHaveLevel(input.mustHaveLevel);
+  if ("candidateRank" in input) product.candidateRank = parseRank(input.candidateRank);
+  if ("productUrl" in input) product.productUrl = textOrNull(input.productUrl);
+  if ("purchaseUrl" in input) product.purchaseUrl = textOrNull(input.purchaseUrl);
+  if ("purchaseNote" in input) product.purchaseNote = textOrNull(input.purchaseNote);
+  if ("plannedPurchaseMonth" in input) product.plannedPurchaseMonth = textOrNull(input.plannedPurchaseMonth);
   if ("calculationOfferId" in input) {
     const nextOfferId = String(input.calculationOfferId ?? "");
     if (product.offers.some((offer) => offer.id === nextOfferId)) {
@@ -238,7 +338,8 @@ export async function updateSettings(input: Record<string, unknown>): Promise<Pr
     "nearLowestPercentageThreshold",
     "largeDropAbsoluteThreshold",
     "largeDropPercentageThreshold",
-    "stalePriceCheckDays"
+    "stalePriceCheckDays",
+    "wishlistBudget"
   ] as const;
   for (const key of numericKeys) {
     if (key in input) {
@@ -248,6 +349,8 @@ export async function updateSettings(input: Record<string, unknown>): Promise<Pr
   }
   if (input.preferredChartPeriod) state.settings.preferredChartPeriod = String(input.preferredChartPeriod) as PriceAppState["settings"]["preferredChartPeriod"];
   if (input.preferredChartPriceType) state.settings.preferredChartPriceType = String(input.preferredChartPriceType) as PriceAppState["settings"]["preferredChartPriceType"];
+  if (input.budgetPeriod) state.settings.budgetPeriod = parseBudgetPeriod(input.budgetPeriod);
+  if (input.defaultBudgetViewMode) state.settings.defaultBudgetViewMode = parseBudgetViewMode(input.defaultBudgetViewMode);
   await writeState(state);
   return state;
 }

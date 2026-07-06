@@ -17,6 +17,18 @@ export type StoreViewMode = "overall-lowest" | "calculation-target" | "by-store"
 
 export type DailyRepresentativeMode = "last" | "lowest";
 
+export type WishlistStatus = "candidate" | "planned" | "purchased" | "on_hold" | "rejected";
+
+export type WishlistPriority = "high" | "medium" | "low";
+
+export type MustHaveLevel = "must" | "nice" | "optional";
+
+export type BudgetViewMode = "planned" | "primary";
+
+export type BudgetPeriod = "one_time" | "monthly" | "yearly";
+
+export type LedgerEntryType = "expense" | "income";
+
 export interface UserPriceSettings {
   userId: string;
   nearLowestAbsoluteThreshold: number;
@@ -26,6 +38,9 @@ export interface UserPriceSettings {
   preferredChartPriceType: PriceType;
   preferredChartPeriod: ChartPeriod;
   stalePriceCheckDays: number;
+  wishlistBudget: number;
+  budgetPeriod: BudgetPeriod;
+  defaultBudgetViewMode: BudgetViewMode;
 }
 
 export interface Offer {
@@ -56,6 +71,15 @@ export interface Product {
   userId: string;
   name: string;
   category: string;
+  detailCategory?: string | null;
+  wishlistStatus: WishlistStatus;
+  priority: WishlistPriority;
+  mustHaveLevel: MustHaveLevel;
+  candidateRank: number;
+  productUrl?: string | null;
+  purchaseUrl?: string | null;
+  purchaseNote?: string | null;
+  plannedPurchaseMonth?: string | null;
   referencePrice?: number | null;
   targetPrice?: number | null;
   customFloorPrice?: number | null;
@@ -102,6 +126,20 @@ export interface PriceAppState {
   products: Product[];
   histories: PriceHistory[];
   settings: UserPriceSettings;
+  ledgerEntries: LedgerEntry[];
+}
+
+export interface LedgerEntry {
+  id: string;
+  userId: string;
+  productId?: string | null;
+  title: string;
+  amount: number;
+  entryType: LedgerEntryType;
+  category: string;
+  occurredOn: string;
+  note?: string | null;
+  createdAt: string;
 }
 
 export interface PriceValidationResult {
@@ -181,7 +219,10 @@ export const DEFAULT_PRICE_SETTINGS: UserPriceSettings = {
   largeDropPercentageThreshold: 5,
   preferredChartPriceType: "effective",
   preferredChartPeriod: "90d",
-  stalePriceCheckDays: 14
+  stalePriceCheckDays: 14,
+  wishlistBudget: 150000,
+  budgetPeriod: "one_time",
+  defaultBudgetViewMode: "planned"
 };
 
 export const STOCK_STATUS_LABELS: Record<StockStatus, string> = {
@@ -210,4 +251,35 @@ export const STORE_VIEW_LABELS: Record<StoreViewMode, string> = {
   "overall-lowest": "商品全体の最安実質価格推移",
   "calculation-target": "計算対象店舗のみ",
   "by-store": "店舗ごとの価格推移"
+};
+
+export const WISHLIST_STATUS_LABELS: Record<WishlistStatus, string> = {
+  candidate: "候補",
+  planned: "購入予定",
+  purchased: "購入済み",
+  on_hold: "保留",
+  rejected: "見送り"
+};
+
+export const WISHLIST_PRIORITY_LABELS: Record<WishlistPriority, string> = {
+  high: "高",
+  medium: "中",
+  low: "低"
+};
+
+export const MUST_HAVE_LABELS: Record<MustHaveLevel, string> = {
+  must: "必須",
+  nice: "できれば欲しい",
+  optional: "余裕があれば"
+};
+
+export const BUDGET_VIEW_LABELS: Record<BudgetViewMode, string> = {
+  planned: "購入予定",
+  primary: "第一候補"
+};
+
+export const BUDGET_PERIOD_LABELS: Record<BudgetPeriod, string> = {
+  one_time: "今回の買い物",
+  monthly: "月次",
+  yearly: "年次"
 };
