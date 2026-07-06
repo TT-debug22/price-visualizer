@@ -100,6 +100,7 @@ interface SettingsRow {
   stale_price_check_days: number;
   wishlist_budget: number | null;
   monthly_household_budget: number | null;
+  category_color_overrides: Record<string, string> | null;
   budget_period: BudgetPeriod | null;
   default_budget_view_mode: BudgetViewMode | null;
 }
@@ -163,6 +164,21 @@ function textOrNull(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeColor(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed.toLowerCase() : null;
+}
+
+function parseCategoryColorOverrides(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([category, color]) => [category.trim(), normalizeColor(color)] as const)
+      .filter((entry): entry is [string, string] => entry[0].length > 0 && entry[1] !== null)
+  );
 }
 
 function productFromRow(row: ProductRow, offers: Offer[]): Product {
@@ -252,6 +268,7 @@ function settingsFromRow(row: SettingsRow | null, userId: string): UserPriceSett
     stalePriceCheckDays: row.stale_price_check_days,
     wishlistBudget: row.wishlist_budget ?? DEFAULT_PRICE_SETTINGS.wishlistBudget,
     monthlyHouseholdBudget: row.monthly_household_budget ?? DEFAULT_PRICE_SETTINGS.monthlyHouseholdBudget,
+    categoryColorOverrides: parseCategoryColorOverrides(row.category_color_overrides),
     budgetPeriod: parseBudgetPeriod(row.budget_period),
     defaultBudgetViewMode: parseBudgetViewMode(row.default_budget_view_mode)
   };
@@ -359,6 +376,7 @@ async function ensureSettings(supabase: SupabaseClient, userId: string): Promise
     stale_price_check_days: defaults.stalePriceCheckDays,
     wishlist_budget: defaults.wishlistBudget,
     monthly_household_budget: defaults.monthlyHouseholdBudget,
+    category_color_overrides: defaults.categoryColorOverrides,
     budget_period: defaults.budgetPeriod,
     default_budget_view_mode: defaults.defaultBudgetViewMode
   };
@@ -483,6 +501,11 @@ export async function updateSupabaseProduct(productId: string, input: Record<str
   const supabase = await createSupabaseServerClient();
   const userId = await getAuthenticatedUserId();
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if ("name" in input) {
+    const name = textOrNull(input.name);
+    if (!name) throw new Error("商品名を入力してください");
+    patch.name = name;
+  }
   if ("targetPrice" in input) patch.target_price = toNumberOrNull(String(input.targetPrice ?? ""));
   if ("customFloorPrice" in input) patch.custom_floor_price = toNumberOrNull(String(input.customFloorPrice ?? ""));
   if ("referencePrice" in input) patch.reference_price = toNumberOrNull(String(input.referencePrice ?? ""));
@@ -505,6 +528,14 @@ export async function updateSupabaseProduct(productId: string, input: Record<str
     await assertOk(supabase.from("offers").update({ is_calculation_target: false }).eq("product_id", productId).eq("user_id", userId));
     await assertOk(supabase.from("offers").update({ is_calculation_target: true }).eq("id", nextOfferId).eq("product_id", productId).eq("user_id", userId));
   }
+  return readSupabaseState();
+}
+
+export async function deleteSupabaseProduct(productId: string): Promise<PriceAppState> {
+  const supabase = await createSupabaseServerClient();
+  const userId = await getAuthenticatedUserId();
+  await assertOk(supabase.from("products").update({ calculation_offer_id: null }).eq("id", productId).eq("user_id", userId));
+  await assertOk(supabase.from("products").delete().eq("id", productId).eq("user_id", userId));
   return readSupabaseState();
 }
 
@@ -642,6 +673,7 @@ export async function updateSupabaseSettings(input: Record<string, unknown>): Pr
   if (input.preferredChartPriceType) patch.preferred_chart_price_type = String(input.preferredChartPriceType);
   if (input.budgetPeriod) patch.budget_period = parseBudgetPeriod(input.budgetPeriod);
   if (input.defaultBudgetViewMode) patch.default_budget_view_mode = parseBudgetViewMode(input.defaultBudgetViewMode);
+  if ("categoryColorOverrides" in input) patch.category_color_overrides = parseCategoryColorOverrides(input.categoryColorOverrides);
   await assertOk(supabase.from("user_price_settings").update(patch).eq("user_id", userId));
   return readSupabaseState();
 }

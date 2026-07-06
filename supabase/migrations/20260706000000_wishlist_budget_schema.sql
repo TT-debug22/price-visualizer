@@ -40,6 +40,7 @@ end $$;
 alter table public.user_price_settings
   add column if not exists wishlist_budget numeric(12, 2) not null default 150000,
   add column if not exists monthly_household_budget numeric(12, 2) not null default 250000,
+  add column if not exists category_color_overrides jsonb not null default '{}'::jsonb,
   add column if not exists budget_period text not null default 'one_time',
   add column if not exists default_budget_view_mode text not null default 'planned';
 

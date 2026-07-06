@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import PriceApp from "../PriceApp";
 import { createInitialState } from "@/domain/fixtures";
@@ -45,14 +45,43 @@ function mockFetch(state: PriceAppState) {
         };
         return new Response(JSON.stringify(currentState), { status: 201, headers: { "Content-Type": "application/json" } });
       }
+      if (String(url).includes("/api/settings") && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body));
+        currentState = {
+          ...currentState,
+          settings: {
+            ...currentState.settings,
+            ...body
+          }
+        };
+        return new Response(JSON.stringify(currentState), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
       if (String(url).includes("/api/products/") && init?.method === "PATCH") {
         const body = JSON.parse(String(init.body));
+        const productId = String(url).split("/api/products/")[1]?.split("/")[0] ?? "product-headphones";
         const nextState = {
           ...currentState,
-          products: currentState.products.map((product) => (product.id === "product-headphones" ? { ...product, targetPrice: Number(body.targetPrice) } : product))
+          products: currentState.products.map((product) =>
+            product.id === productId
+              ? {
+                  ...product,
+                  ...("name" in body ? { name: body.name } : {}),
+                  ...("targetPrice" in body ? { targetPrice: Number(body.targetPrice) } : {})
+                }
+              : product
+          )
         };
         currentState = nextState;
         return new Response(JSON.stringify(nextState), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (String(url).includes("/api/products/") && init?.method === "DELETE") {
+        const productId = String(url).split("/api/products/")[1]?.split("/")[0] ?? "";
+        currentState = {
+          ...currentState,
+          products: currentState.products.filter((product) => product.id !== productId),
+          histories: currentState.histories.filter((history) => history.productId !== productId)
+        };
+        return new Response(JSON.stringify(currentState), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       return new Response(JSON.stringify(currentState), { status: 200, headers: { "Content-Type": "application/json" } });
     })
@@ -109,6 +138,42 @@ describe("PriceApp", () => {
 
     expect(await screen.findByText("家計簿に記録しました")).toBeInTheDocument();
     expect(screen.getByTestId("ledger-entry-list")).toHaveTextContent("ランチ");
+  });
+
+  it("商品名を変更できる", async () => {
+    mockFetch(createInitialState());
+    render(<PriceApp />);
+    await openPriceTab();
+    const nameInput = await screen.findByTestId("product-name-input");
+    await userEvent.clear(nameInput);
+    await userEvent.type(nameInput, "新しいヘッドホン");
+    await userEvent.click(screen.getByTestId("save-target-price"));
+    expect(await screen.findByText("商品情報を保存しました")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "新しいヘッドホン" })).toBeInTheDocument();
+  });
+
+  it("商品を削除できる", async () => {
+    mockFetch(createInitialState());
+    render(<PriceApp />);
+    await openPriceTab();
+    expect(await screen.findByTestId("product-card-product-headphones")).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("delete-product"));
+    await userEvent.click(screen.getByTestId("confirm-delete-product"));
+    await waitFor(() => expect(screen.queryByTestId("product-card-product-headphones")).not.toBeInTheDocument());
+  });
+
+  it("カテゴリ色を任意設定できる", async () => {
+    mockFetch(createInitialState());
+    render(<PriceApp />);
+    await userEvent.click(await screen.findByTestId("tab-settings"));
+    await userEvent.click(screen.getByLabelText("自動", { selector: "input[name='categoryColorAuto:オーディオ']" }));
+    const colorInput = screen.getByTestId("category-color-オーディオ");
+    fireEvent.change(colorInput, { target: { value: "#123456" } });
+    await userEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByText("判定条件を保存しました")).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("tab-wishlist"));
+    const swatch = document.querySelector("[style*='18, 52, 86']");
+    expect(swatch).toBeTruthy();
   });
 
   it("期間切り替えができる", async () => {

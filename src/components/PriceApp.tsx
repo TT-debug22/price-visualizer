@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  Palette,
   Plus,
   ReceiptText,
   Save,
@@ -19,6 +20,7 @@ import {
   SlidersHorizontal,
   TrendingDown,
   TrendingUp,
+  Trash2,
   Wallet
 } from "lucide-react";
 import type {
@@ -113,7 +115,8 @@ function categoryKey(product: Product): string {
   return product.detailCategory || product.category || "未分類";
 }
 
-function categoryColor(category: string): string {
+function categoryColor(category: string, overrides: Record<string, string> = {}): string {
+  if (overrides[category]) return overrides[category];
   let hash = 0;
   for (const char of category) hash = (hash * 31 + char.charCodeAt(0)) % CATEGORY_COLORS.length;
   return CATEGORY_COLORS[Math.abs(hash) % CATEGORY_COLORS.length];
@@ -123,7 +126,7 @@ function categoryInitial(category: string): string {
   return Array.from(category || "未").slice(0, 1).join("");
 }
 
-function categorySlices(products: Product[]): CategorySlice[] {
+function categorySlices(products: Product[], colorOverrides: Record<string, string>): CategorySlice[] {
   const groups = new Map<string, { total: number; count: number }>();
   for (const product of products) {
     const key = categoryKey(product);
@@ -131,7 +134,7 @@ function categorySlices(products: Product[]): CategorySlice[] {
     groups.set(key, { total: current.total + wishlistPrice(product), count: current.count + 1 });
   }
   return Array.from(groups.entries())
-    .map(([category, value]) => ({ category, total: value.total, count: value.count, color: categoryColor(category) }))
+    .map(([category, value]) => ({ category, total: value.total, count: value.count, color: categoryColor(category, colorOverrides) }))
     .sort((a, b) => b.total - a.total);
 }
 
@@ -147,12 +150,12 @@ function conicGradient(slices: CategorySlice[], total: number): string {
   return `conic-gradient(${segments.join(", ")})`;
 }
 
-function ledgerCategorySlices(entries: Array<{ category: string; amount: number; count: number }>): CategorySlice[] {
+function ledgerCategorySlices(entries: Array<{ category: string; amount: number; count: number }>, colorOverrides: Record<string, string>): CategorySlice[] {
   return entries.map((entry) => ({
     category: entry.category,
     total: entry.amount,
     count: entry.count,
-    color: categoryColor(entry.category)
+    color: categoryColor(entry.category, colorOverrides)
   }));
 }
 
@@ -294,13 +297,13 @@ function BudgetModeControl({ mode, onChange }: { mode: BudgetViewMode; onChange:
   );
 }
 
-function ProductVisual({ product }: { product: Product }) {
+function ProductVisual({ product, colorOverrides = {} }: { product: Product; colorOverrides?: Record<string, string> }) {
   const category = categoryKey(product);
   if (product.imageUrl) {
     return <img className="product-visual" src={product.imageUrl} alt={`${product.name}の写真`} loading="lazy" />;
   }
   return (
-    <span className="product-visual product-visual-fallback" style={{ background: categoryColor(category) }} aria-hidden="true">
+    <span className="product-visual product-visual-fallback" style={{ background: categoryColor(category, colorOverrides) }} aria-hidden="true">
       {categoryInitial(category)}
     </span>
   );
@@ -320,7 +323,8 @@ function BudgetOverview({
   onOpenLedger: () => void;
 }) {
   const summary = calculateBudgetSummary(state, mode);
-  const slices = categorySlices(summary.products);
+  const colorOverrides = state.settings.categoryColorOverrides;
+  const slices = categorySlices(summary.products, colorOverrides);
   const ledgerSummary = buildLedgerMonthSummary(state.ledgerEntries, ledgerMonthKey(NOW), state.settings.monthlyHouseholdBudget);
   const usage = summary.budget > 0 ? Math.min(100, Math.round((summary.total / summary.budget) * 100)) : 0;
   const unsetCount = summary.products.filter((product) => wishlistPrice(product) === 0).length;
@@ -392,7 +396,7 @@ function BudgetOverview({
             <div className="compact-list" data-testid="budget-product-list">
               {summary.products.slice(0, 6).map((product) => (
                 <button key={product.id} onClick={() => onOpenProduct(product.id)}>
-                  <ProductVisual product={product} />
+                  <ProductVisual product={product} colorOverrides={colorOverrides} />
                   <span>{product.name}</span>
                   <strong>{yen(wishlistPrice(product))}</strong>
                 </button>
@@ -438,6 +442,7 @@ function BudgetOverview({
 
 function WishlistCategoryList({ state, onOpenProduct }: { state: PriceAppState; onOpenProduct: (productId: string) => void }) {
   const categories = groupProductsByCategory(state.products);
+  const colorOverrides = state.settings.categoryColorOverrides;
   return (
     <section className="wishlist-page" aria-label="欲しいものリスト">
       <div className="section-heading">
@@ -452,7 +457,7 @@ function WishlistCategoryList({ state, onOpenProduct }: { state: PriceAppState; 
             <div className="category-header">
               <div>
                 <h2>
-                  <span className="category-swatch" style={{ background: categoryColor(category.category) }} />
+                  <span className="category-swatch" style={{ background: categoryColor(category.category, colorOverrides) }} />
                   {category.category}
                 </h2>
                 <p className="muted">購入予定 {category.plannedCount}件 / 第一候補 {category.primaryCount}件</p>
@@ -462,7 +467,7 @@ function WishlistCategoryList({ state, onOpenProduct }: { state: PriceAppState; 
             <div className="candidate-list">
               {category.products.map((product) => (
                 <button key={product.id} className="candidate-row" onClick={() => onOpenProduct(product.id)}>
-                  <ProductVisual product={product} />
+                  <ProductVisual product={product} colorOverrides={state.settings.categoryColorOverrides} />
                   <span className="candidate-main">
                     <strong>{product.name}</strong>
                     <small>
@@ -526,7 +531,7 @@ function ProductCard({
 
   return (
     <button className={`product-card ${selected ? "is-selected" : ""}`} onClick={onSelect} data-testid={`product-card-${product.id}`}>
-      <ProductVisual product={product} />
+      <ProductVisual product={product} colorOverrides={state.settings.categoryColorOverrides} />
       <span className="card-title">{product.name}</span>
       <span className="card-meta">{categoryKey(product)}</span>
       <span className="price-row">
@@ -565,7 +570,7 @@ function Dashboard({ state, onSelectProduct }: { state: PriceAppState; onSelectP
   );
 }
 
-function LedgerEntryList({ entries }: { entries: LedgerEntry[] }) {
+function LedgerEntryList({ entries, colorOverrides }: { entries: LedgerEntry[]; colorOverrides: Record<string, string> }) {
   if (entries.length === 0) {
     return <p className="muted">この月の記録はまだありません。</p>;
   }
@@ -574,7 +579,7 @@ function LedgerEntryList({ entries }: { entries: LedgerEntry[] }) {
     <div className="ledger-list" data-testid="ledger-entry-list">
       {entries.map((entry) => (
         <div className="ledger-row" key={entry.id}>
-          <span className="ledger-row-icon" style={{ background: categoryColor(entry.category) }}>
+          <span className="ledger-row-icon" style={{ background: categoryColor(entry.category, colorOverrides) }}>
             {entry.entryType === "income" ? "+" : "-"}
           </span>
           <div>
@@ -598,7 +603,8 @@ function HouseholdBook({ state, onStateChange }: { state: PriceAppState; onState
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const summary = buildLedgerMonthSummary(state.ledgerEntries, month, state.settings.monthlyHouseholdBudget);
-  const slices = ledgerCategorySlices(summary.categorySummaries);
+  const colorOverrides = state.settings.categoryColorOverrides;
+  const slices = ledgerCategorySlices(summary.categorySummaries, colorOverrides);
   const chartBackground = conicGradient(slices, summary.expenseTotal);
   const budgetUsage = summary.budget > 0 ? Math.min(100, Math.round((summary.expenseTotal / summary.budget) * 100)) : 0;
   const trend = buildLedgerTrend(state.ledgerEntries, month, 6);
@@ -754,7 +760,7 @@ function HouseholdBook({ state, onStateChange }: { state: PriceAppState; onState
               支出 {summary.expenseCount}件 / 収入 {summary.incomeCount}件
             </span>
           </div>
-          <LedgerEntryList entries={summary.entries} />
+          <LedgerEntryList entries={summary.entries} colorOverrides={colorOverrides} />
         </section>
 
         <section className="ledger-trend-card">
@@ -986,7 +992,11 @@ function EvaluationPanel({ product, state }: { product: Product; state: PriceApp
 
 function ProductPriceSettings({ product, onUpdated }: { product: Product; onUpdated: (state: PriceAppState) => void }) {
   const [message, setMessage] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   async function submit(formData: FormData) {
+    setMessage(null);
+    setDeleteError(null);
     const state = await parseResponse<PriceAppState>(
       await fetch(`/api/products/${product.id}`, {
         method: "PATCH",
@@ -995,7 +1005,22 @@ function ProductPriceSettings({ product, onUpdated }: { product: Product; onUpda
       })
     );
     onUpdated(state);
-    setMessage("価格設定を保存しました");
+    setMessage("商品情報を保存しました");
+  }
+
+  async function deleteProduct() {
+    setMessage(null);
+    setDeleteError(null);
+    try {
+      const state = await parseResponse<PriceAppState>(
+        await fetch(`/api/products/${product.id}`, {
+          method: "DELETE"
+        })
+      );
+      onUpdated(state);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "商品を削除できませんでした");
+    }
   }
 
   return (
@@ -1005,6 +1030,10 @@ function ProductPriceSettings({ product, onUpdated }: { product: Product; onUpda
         {message && <span className="success-text">{message}</span>}
       </div>
       <form action={submit} className="inline-settings product-edit-form" data-testid="target-form">
+        <label>
+          商品名
+          <input name="name" defaultValue={product.name} required data-testid="product-name-input" />
+        </label>
         <label>
           詳細ジャンル
           <input name="detailCategory" defaultValue={product.detailCategory ?? ""} />
@@ -1085,6 +1114,30 @@ function ProductPriceSettings({ product, onUpdated }: { product: Product; onUpda
           保存
         </button>
       </form>
+      <div className="delete-product-zone">
+        {confirmDelete ? (
+          <div className="delete-confirm">
+            <p>
+              <strong>{product.name}</strong> を削除します。関連する価格履歴も削除されます。
+            </p>
+            <div>
+              <button type="button" className="danger-button" onClick={() => void deleteProduct()} data-testid="confirm-delete-product">
+                <Trash2 size={16} />
+                削除する
+              </button>
+              <button type="button" className="text-button" onClick={() => setConfirmDelete(false)}>
+                キャンセル
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="text-button danger-text" onClick={() => setConfirmDelete(true)} data-testid="delete-product">
+            <Trash2 size={16} />
+            商品を削除
+          </button>
+        )}
+        {deleteError && <p className="form-error">{deleteError}</p>}
+      </div>
     </section>
   );
 }
@@ -1433,7 +1486,7 @@ function ProductDetail({ product, state, onStateChange }: { product: Product; st
     <article className="detail">
       <div className="detail-header">
         <div className="detail-title">
-          <ProductVisual product={product} />
+          <ProductVisual product={product} colorOverrides={state.settings.categoryColorOverrides} />
           <div>
             <p className="eyebrow">商品詳細</p>
             <h1>{product.name}</h1>
@@ -1493,14 +1546,71 @@ function ProductDetail({ product, state, onStateChange }: { product: Product; st
   );
 }
 
+function configurableCategories(state: PriceAppState): string[] {
+  const categories = new Set<string>([
+    ...LEDGER_CATEGORIES,
+    ...Object.keys(state.settings.categoryColorOverrides)
+  ]);
+  for (const product of state.products) categories.add(categoryKey(product));
+  for (const entry of state.ledgerEntries) categories.add(entry.category);
+  return Array.from(categories).filter(Boolean).sort((a, b) => a.localeCompare(b, "ja"));
+}
+
+function CategoryColorSettings({ state }: { state: PriceAppState }) {
+  const categories = configurableCategories(state);
+  const overrides = state.settings.categoryColorOverrides;
+  return (
+    <section className="category-color-settings">
+      <div className="section-heading compact">
+        <h2>
+          <Palette size={18} /> カテゴリ色
+        </h2>
+        <span>自動色または任意色</span>
+      </div>
+      <div className="category-color-list">
+        {categories.map((category) => {
+          const hasManualColor = Boolean(overrides[category]);
+          const currentColor = categoryColor(category, overrides);
+          const autoColor = categoryColor(category);
+          return (
+            <div className="category-color-row" key={category}>
+              <span className="category-swatch large" style={{ background: currentColor }} />
+              <strong>{category}</strong>
+              <label className="compact-checkbox">
+                <input name={`categoryColorAuto:${category}`} type="checkbox" defaultChecked={!hasManualColor} />
+                自動
+              </label>
+              <label>
+                任意色
+                <input name={`categoryColor:${category}`} type="color" defaultValue={hasManualColor ? currentColor : autoColor} data-testid={`category-color-${category}`} />
+              </label>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function GlobalSettings({ state, onUpdated }: { state: PriceAppState; onUpdated: (state: PriceAppState) => void }) {
   const [message, setMessage] = useState<string | null>(null);
   async function submit(formData: FormData) {
+    const body: Record<string, unknown> = Object.fromEntries(formData);
+    const categoryColorOverrides: Record<string, string> = {};
+    for (const [key, value] of formData.entries()) {
+      if (!key.startsWith("categoryColor:")) continue;
+      const category = key.slice("categoryColor:".length);
+      const isAuto = formData.get(`categoryColorAuto:${category}`) === "on";
+      delete body[key];
+      delete body[`categoryColorAuto:${category}`];
+      if (!isAuto && typeof value === "string") categoryColorOverrides[category] = value;
+    }
+    body.categoryColorOverrides = categoryColorOverrides;
     const nextState = await parseResponse<PriceAppState>(
       await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(Object.fromEntries(formData))
+        body: JSON.stringify(body)
       })
     );
     onUpdated(nextState);
@@ -1512,55 +1622,58 @@ function GlobalSettings({ state, onUpdated }: { state: PriceAppState; onUpdated:
       <h2>
         <SlidersHorizontal size={18} /> 判定条件
       </h2>
-      <form action={submit} className="form-grid">
-        <label>
-          欲しいもの予算
-          <input name="wishlistBudget" type="number" min="0" defaultValue={state.settings.wishlistBudget} />
-        </label>
-        <label>
-          家計簿 月予算
-          <input name="monthlyHouseholdBudget" type="number" min="0" defaultValue={state.settings.monthlyHouseholdBudget} />
-        </label>
-        <label>
-          予算期間
-          <select name="budgetPeriod" defaultValue={state.settings.budgetPeriod}>
-            {(Object.keys(BUDGET_PERIOD_LABELS) as BudgetPeriod[]).map((key) => (
-              <option key={key} value={key}>
-                {BUDGET_PERIOD_LABELS[key]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          トップの初期合計
-          <select name="defaultBudgetViewMode" defaultValue={state.settings.defaultBudgetViewMode}>
-            {(Object.keys(BUDGET_VIEW_LABELS) as BudgetViewMode[]).map((key) => (
-              <option key={key} value={key}>
-                {BUDGET_VIEW_LABELS[key]}の合計
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          過去最安圏内 金額
-          <input name="nearLowestAbsoluteThreshold" type="number" min="0" defaultValue={state.settings.nearLowestAbsoluteThreshold} />
-        </label>
-        <label>
-          過去最安圏内 割合
-          <input name="nearLowestPercentageThreshold" type="number" min="0" step="0.1" defaultValue={state.settings.nearLowestPercentageThreshold} />
-        </label>
-        <label>
-          大きく値下がり 金額
-          <input name="largeDropAbsoluteThreshold" type="number" min="0" defaultValue={state.settings.largeDropAbsoluteThreshold} />
-        </label>
-        <label>
-          大きく値下がり 割合
-          <input name="largeDropPercentageThreshold" type="number" min="0" step="0.1" defaultValue={state.settings.largeDropPercentageThreshold} />
-        </label>
-        <label>
-          確認期限 日数
-          <input name="stalePriceCheckDays" type="number" min="1" defaultValue={state.settings.stalePriceCheckDays} />
-        </label>
+      <form action={submit} className="settings-form">
+        <div className="form-grid">
+          <label>
+            欲しいもの予算
+            <input name="wishlistBudget" type="number" min="0" defaultValue={state.settings.wishlistBudget} />
+          </label>
+          <label>
+            家計簿 月予算
+            <input name="monthlyHouseholdBudget" type="number" min="0" defaultValue={state.settings.monthlyHouseholdBudget} />
+          </label>
+          <label>
+            予算期間
+            <select name="budgetPeriod" defaultValue={state.settings.budgetPeriod}>
+              {(Object.keys(BUDGET_PERIOD_LABELS) as BudgetPeriod[]).map((key) => (
+                <option key={key} value={key}>
+                  {BUDGET_PERIOD_LABELS[key]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            トップの初期合計
+            <select name="defaultBudgetViewMode" defaultValue={state.settings.defaultBudgetViewMode}>
+              {(Object.keys(BUDGET_VIEW_LABELS) as BudgetViewMode[]).map((key) => (
+                <option key={key} value={key}>
+                  {BUDGET_VIEW_LABELS[key]}の合計
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            過去最安圏内 金額
+            <input name="nearLowestAbsoluteThreshold" type="number" min="0" defaultValue={state.settings.nearLowestAbsoluteThreshold} />
+          </label>
+          <label>
+            過去最安圏内 割合
+            <input name="nearLowestPercentageThreshold" type="number" min="0" step="0.1" defaultValue={state.settings.nearLowestPercentageThreshold} />
+          </label>
+          <label>
+            大きく値下がり 金額
+            <input name="largeDropAbsoluteThreshold" type="number" min="0" defaultValue={state.settings.largeDropAbsoluteThreshold} />
+          </label>
+          <label>
+            大きく値下がり 割合
+            <input name="largeDropPercentageThreshold" type="number" min="0" step="0.1" defaultValue={state.settings.largeDropPercentageThreshold} />
+          </label>
+          <label>
+            確認期限 日数
+            <input name="stalePriceCheckDays" type="number" min="1" defaultValue={state.settings.stalePriceCheckDays} />
+          </label>
+        </div>
+        <CategoryColorSettings state={state} />
         <button type="submit" className="primary-button">
           保存
         </button>
@@ -1730,7 +1843,7 @@ export function PriceApp() {
           </aside>
           <section className="detail-panel">
             {selectedProduct ? (
-              <ProductDetail product={selectedProduct} state={state} onStateChange={setState} />
+              <ProductDetail key={selectedProduct.id} product={selectedProduct} state={state} onStateChange={setState} />
             ) : (
               <div className="empty-chart">
                 <AlertTriangle size={20} />

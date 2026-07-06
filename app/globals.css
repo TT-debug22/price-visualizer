@@ -373,6 +373,11 @@ h2 {
   border-radius: 999px;
 }
 
+.category-swatch.large {
+  width: 24px;
+  height: 24px;
+}
+
 .overview-grid,
 .comparison-grid,
 .ledger-grid {
@@ -537,6 +542,28 @@ h2 {
   border: 0;
   padding: 0;
   text-align: left;
+}
+
+.danger-text {
+  color: var(--danger);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  border-radius: 6px;
+  border: 1px solid rgba(244, 63, 94, 0.45);
+  background: var(--danger);
+  color: #ffffff;
+  padding: 8px 12px;
+  font-weight: 700;
 }
 
 .ledger-page {
@@ -919,6 +946,30 @@ h2 {
   align-items: end;
 }
 
+.delete-product-zone {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.delete-confirm {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  border-radius: 8px;
+  background: rgba(244, 63, 94, 0.08);
+}
+
+.delete-confirm div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
 .product-edit-form label {
   min-width: 0;
 }
@@ -952,6 +1003,11 @@ input[type="checkbox"] {
   width: auto;
   min-width: auto;
   min-height: auto;
+}
+
+input[type="color"] {
+  min-height: 42px;
+  padding: 4px;
 }
 
 .segmented {
@@ -1183,6 +1239,41 @@ th {
   gap: 6px;
   align-items: center;
   margin-bottom: 12px;
+}
+
+.settings-form {
+  display: grid;
+  gap: 14px;
+}
+
+.category-color-settings {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.category-color-list {
+  display: grid;
+  gap: 8px;
+}
+
+.category-color-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 86px 140px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.compact-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
 }
 
 .app-footer {
@@ -1477,6 +1568,19 @@ th {
 
   .trend-bars {
     height: 96px;
+  }
+
+  .category-color-row {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .category-color-row label {
+    grid-column: 2;
+  }
+
+  .delete-confirm div {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .candidate-price {

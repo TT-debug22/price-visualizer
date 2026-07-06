@@ -24,6 +24,7 @@ import { isSupabaseConfigured } from "./supabase/env";
 import {
   createSupabaseProduct,
   createSupabaseLedgerEntry,
+  deleteSupabaseProduct,
   readSupabaseState,
   recordSupabaseProductPrice,
   updateSupabaseHistoryExclusion,
@@ -112,6 +113,21 @@ function textOrNull(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function normalizeColor(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed.toLowerCase() : null;
+}
+
+function parseCategoryColorOverrides(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([category, color]) => [category.trim(), normalizeColor(color)] as const)
+      .filter((entry): entry is [string, string] => entry[0].length > 0 && entry[1] !== null)
+  );
+}
+
 function normalizeProduct(product: Product): Product {
   return {
     ...product,
@@ -153,6 +169,7 @@ function normalizeState(state: PriceAppState): PriceAppState {
       userId: state.userId,
       wishlistBudget: state.settings?.wishlistBudget ?? DEFAULT_PRICE_SETTINGS.wishlistBudget,
       monthlyHouseholdBudget: state.settings?.monthlyHouseholdBudget ?? DEFAULT_PRICE_SETTINGS.monthlyHouseholdBudget,
+      categoryColorOverrides: parseCategoryColorOverrides(state.settings?.categoryColorOverrides),
       budgetPeriod: parseBudgetPeriod(state.settings?.budgetPeriod),
       defaultBudgetViewMode: parseBudgetViewMode(state.settings?.defaultBudgetViewMode)
     }
@@ -251,6 +268,11 @@ export async function updateProduct(productId: string, input: Record<string, unk
   const product = state.products.find((item) => item.id === productId);
   if (!product) throw new Error("商品が見つかりません");
 
+  if ("name" in input) {
+    const name = textOrNull(input.name);
+    if (!name) throw new Error("商品名を入力してください");
+    product.name = name;
+  }
   if ("targetPrice" in input) product.targetPrice = toNumberOrNull(String(input.targetPrice ?? ""));
   if ("customFloorPrice" in input) product.customFloorPrice = toNumberOrNull(String(input.customFloorPrice ?? ""));
   if ("referencePrice" in input) product.referencePrice = toNumberOrNull(String(input.referencePrice ?? ""));
@@ -274,6 +296,18 @@ export async function updateProduct(productId: string, input: Record<string, unk
   }
   product.updatedAt = new Date().toISOString();
 
+  await writeState(state);
+  return state;
+}
+
+export async function deleteProduct(productId: string): Promise<PriceAppState> {
+  if (isSupabaseConfigured()) return deleteSupabaseProduct(productId);
+  const state = await readState();
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) throw new Error("商品が見つかりません");
+  state.products = state.products.filter((item) => item.id !== productId);
+  state.histories = state.histories.filter((history) => history.productId !== productId);
+  state.ledgerEntries = state.ledgerEntries.map((entry) => (entry.productId === productId ? { ...entry, productId: null } : entry));
   await writeState(state);
   return state;
 }
@@ -401,6 +435,7 @@ export async function updateSettings(input: Record<string, unknown>): Promise<Pr
   if (input.preferredChartPriceType) state.settings.preferredChartPriceType = String(input.preferredChartPriceType) as PriceAppState["settings"]["preferredChartPriceType"];
   if (input.budgetPeriod) state.settings.budgetPeriod = parseBudgetPeriod(input.budgetPeriod);
   if (input.defaultBudgetViewMode) state.settings.defaultBudgetViewMode = parseBudgetViewMode(input.defaultBudgetViewMode);
+  if ("categoryColorOverrides" in input) state.settings.categoryColorOverrides = parseCategoryColorOverrides(input.categoryColorOverrides);
   await writeState(state);
   return state;
 }

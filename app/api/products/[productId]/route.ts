@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { updateProduct } from "@/lib/store";
+import { deleteProduct, updateProduct } from "@/lib/store";
 import { jsonError } from "@/lib/api-errors";
 
 export async function PATCH(request: Request, context: { params: Promise<{ productId: string }> }) {
@@ -9,5 +9,15 @@ export async function PATCH(request: Request, context: { params: Promise<{ produ
     return NextResponse.json(state);
   } catch (error) {
     return jsonError(error, "商品設定を更新できませんでした");
+  }
+}
+
+export async function DELETE(_request: Request, context: { params: Promise<{ productId: string }> }) {
+  try {
+    const { productId } = await context.params;
+    const state = await deleteProduct(productId);
+    return NextResponse.json(state);
+  } catch (error) {
+    return jsonError(error, "商品を削除できませんでした");
   }
 }

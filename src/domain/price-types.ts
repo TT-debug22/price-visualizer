@@ -40,6 +40,7 @@ export interface UserPriceSettings {
   stalePriceCheckDays: number;
   wishlistBudget: number;
   monthlyHouseholdBudget: number;
+  categoryColorOverrides: Record<string, string>;
   budgetPeriod: BudgetPeriod;
   defaultBudgetViewMode: BudgetViewMode;
 }
@@ -224,6 +225,7 @@ export const DEFAULT_PRICE_SETTINGS: UserPriceSettings = {
   stalePriceCheckDays: 14,
   wishlistBudget: 150000,
   monthlyHouseholdBudget: 250000,
+  categoryColorOverrides: {},
   budgetPeriod: "one_time",
   defaultBudgetViewMode: "planned"
 };
