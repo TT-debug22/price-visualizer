@@ -698,79 +698,84 @@ function ProductPriceSettings({ product, onUpdated }: { product: Product; onUpda
   }
 
   return (
-    <form action={submit} className="inline-settings" data-testid="target-form">
-      <label>
-        カテゴリ
-        <input name="category" defaultValue={product.category} />
-      </label>
-      <label>
-        詳細ジャンル
-        <input name="detailCategory" defaultValue={product.detailCategory ?? ""} />
-      </label>
-      <label>
-        ステータス
-        <select name="wishlistStatus" defaultValue={product.wishlistStatus}>
-          {(Object.keys(WISHLIST_STATUS_LABELS) as WishlistStatus[]).map((key) => (
-            <option key={key} value={key}>
-              {WISHLIST_STATUS_LABELS[key]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        候補順位
-        <input name="candidateRank" type="number" min="1" defaultValue={product.candidateRank} />
-      </label>
-      <label>
-        優先度
-        <select name="priority" defaultValue={product.priority}>
-          {(Object.keys(WISHLIST_PRIORITY_LABELS) as WishlistPriority[]).map((key) => (
-            <option key={key} value={key}>
-              {WISHLIST_PRIORITY_LABELS[key]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        必須度
-        <select name="mustHaveLevel" defaultValue={product.mustHaveLevel}>
-          {(Object.keys(MUST_HAVE_LABELS) as MustHaveLevel[]).map((key) => (
-            <option key={key} value={key}>
-              {MUST_HAVE_LABELS[key]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        商品URL
-        <input name="productUrl" type="url" defaultValue={product.productUrl ?? ""} />
-      </label>
-      <label>
-        購入先URL
-        <input name="purchaseUrl" type="url" defaultValue={product.purchaseUrl ?? ""} />
-      </label>
-      <label>
-        購入予定月
-        <input name="plannedPurchaseMonth" type="month" defaultValue={product.plannedPurchaseMonth ?? ""} />
-      </label>
-      <label>
-        目標価格
-        <input name="targetPrice" type="number" min="0" defaultValue={product.targetPrice ?? ""} data-testid="target-price-input" />
-      </label>
-      <label>
-        ユーザー設定底値
-        <input name="customFloorPrice" type="number" min="0" defaultValue={product.customFloorPrice ?? ""} data-testid="floor-price-input" />
-      </label>
-      <label>
-        メモ
-        <input name="purchaseNote" defaultValue={product.purchaseNote ?? ""} />
-      </label>
-      <button type="submit" className="icon-button" data-testid="save-target-price">
-        <Save size={16} />
-        保存
-      </button>
-      {message && <span className="success-text">{message}</span>}
-    </form>
+    <section className="form-panel product-edit-panel">
+      <div className="section-heading compact">
+        <h2>商品情報と購入条件</h2>
+        {message && <span className="success-text">{message}</span>}
+      </div>
+      <form action={submit} className="inline-settings product-edit-form" data-testid="target-form">
+        <label>
+          カテゴリ
+          <input name="category" defaultValue={product.category} />
+        </label>
+        <label>
+          詳細ジャンル
+          <input name="detailCategory" defaultValue={product.detailCategory ?? ""} />
+        </label>
+        <label>
+          ステータス
+          <select name="wishlistStatus" defaultValue={product.wishlistStatus}>
+            {(Object.keys(WISHLIST_STATUS_LABELS) as WishlistStatus[]).map((key) => (
+              <option key={key} value={key}>
+                {WISHLIST_STATUS_LABELS[key]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          候補順位
+          <input name="candidateRank" type="number" min="1" defaultValue={product.candidateRank} />
+        </label>
+        <label>
+          優先度
+          <select name="priority" defaultValue={product.priority}>
+            {(Object.keys(WISHLIST_PRIORITY_LABELS) as WishlistPriority[]).map((key) => (
+              <option key={key} value={key}>
+                {WISHLIST_PRIORITY_LABELS[key]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          必須度
+          <select name="mustHaveLevel" defaultValue={product.mustHaveLevel}>
+            {(Object.keys(MUST_HAVE_LABELS) as MustHaveLevel[]).map((key) => (
+              <option key={key} value={key}>
+                {MUST_HAVE_LABELS[key]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          商品URL
+          <input name="productUrl" type="url" defaultValue={product.productUrl ?? ""} />
+        </label>
+        <label>
+          購入先URL
+          <input name="purchaseUrl" type="url" defaultValue={product.purchaseUrl ?? ""} />
+        </label>
+        <label>
+          購入予定月
+          <input name="plannedPurchaseMonth" type="month" defaultValue={product.plannedPurchaseMonth ?? ""} />
+        </label>
+        <label>
+          目標価格
+          <input name="targetPrice" type="number" min="0" defaultValue={product.targetPrice ?? ""} data-testid="target-price-input" />
+        </label>
+        <label>
+          ユーザー設定底値
+          <input name="customFloorPrice" type="number" min="0" defaultValue={product.customFloorPrice ?? ""} data-testid="floor-price-input" />
+        </label>
+        <label>
+          メモ
+          <input name="purchaseNote" defaultValue={product.purchaseNote ?? ""} />
+        </label>
+        <button type="submit" className="icon-button save-edit-button" data-testid="save-target-price">
+          <Save size={16} />
+          保存
+        </button>
+      </form>
+    </section>
   );
 }
 
@@ -982,12 +987,12 @@ function HistoryTable({ product, state, onUpdated }: { product: Product; state: 
                 const labels = historyLabels(history, state.histories, product, NOW);
                 return (
                   <tr key={history.id} data-testid={`history-row-${history.id}`} className={labels.includes("過去最安") ? "lowest-row" : ""}>
-                    <td>{new Intl.DateTimeFormat("ja-JP", { dateStyle: "short", timeStyle: "short" }).format(new Date(history.recordedAt))}</td>
-                    <td>{history.storeName}</td>
-                    <td>{yen(history.listedPrice)}</td>
-                    <td>{yen(history.effectivePrice)}</td>
-                    <td>{STOCK_STATUS_LABELS[history.stockStatus]}</td>
-                    <td>
+                    <td data-label="記録日時">{new Intl.DateTimeFormat("ja-JP", { dateStyle: "short", timeStyle: "short" }).format(new Date(history.recordedAt))}</td>
+                    <td data-label="店舗">{history.storeName}</td>
+                    <td data-label="表示価格">{yen(history.listedPrice)}</td>
+                    <td data-label="実質価格">{yen(history.effectivePrice)}</td>
+                    <td data-label="在庫">{STOCK_STATUS_LABELS[history.stockStatus]}</td>
+                    <td data-label="ラベル">
                       <div className="label-list">
                         {labels.map((label) => (
                           <span key={label} className="small-label">
@@ -996,7 +1001,7 @@ function HistoryTable({ product, state, onUpdated }: { product: Product; state: 
                         ))}
                       </div>
                     </td>
-                    <td>
+                    <td data-label="底値判定">
                       <button className="text-button" onClick={() => toggleExclusion(history)} data-testid={`exclude-history-${history.id}`}>
                         {history.isExcludedFromLowestPrice ? "除外を解除" : "底値計算から除外"}
                       </button>
@@ -1137,6 +1142,7 @@ function ProductDetail({ product, state, onStateChange }: { product: Product; st
       <PriceSummary product={product} state={state} />
       <EvaluationPanel product={product} state={state} />
       <ProductPriceSettings product={product} onUpdated={onStateChange} />
+      <ManualPriceForm product={product} state={state} onRecorded={onStateChange} />
       <ChartControls
         product={product}
         state={state}
@@ -1165,7 +1171,6 @@ function ProductDetail({ product, state, onStateChange }: { product: Product; st
         dailyRepresentativeMode={dailyRepresentativeMode}
         now={NOW}
       />
-      <ManualPriceForm product={product} state={state} onRecorded={onStateChange} />
       <HistoryTable product={product} state={state} onUpdated={onStateChange} />
     </article>
   );
@@ -1287,6 +1292,15 @@ export function PriceApp() {
   function openProduct(productId: string) {
     setSelectedProductId(productId);
     setActiveTab("price");
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        try {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        } catch {
+          window.scrollTo(0, 0);
+        }
+      });
+    }
   }
 
   if (authRequired) {
