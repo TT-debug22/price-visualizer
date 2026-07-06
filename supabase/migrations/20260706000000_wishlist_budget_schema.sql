@@ -39,6 +39,7 @@ end $$;
 
 alter table public.user_price_settings
   add column if not exists wishlist_budget numeric(12, 2) not null default 150000,
+  add column if not exists monthly_household_budget numeric(12, 2) not null default 250000,
   add column if not exists budget_period text not null default 'one_time',
   add column if not exists default_budget_view_mode text not null default 'planned';
 
@@ -54,6 +55,12 @@ begin
     alter table public.user_price_settings
       add constraint user_price_settings_budget_period_check
       check (budget_period in ('one_time', 'monthly', 'yearly'));
+  end if;
+
+  if not exists (select 1 from pg_constraint where conname = 'user_price_settings_monthly_household_budget_check') then
+    alter table public.user_price_settings
+      add constraint user_price_settings_monthly_household_budget_check
+      check (monthly_household_budget >= 0);
   end if;
 
   if not exists (select 1 from pg_constraint where conname = 'user_price_settings_default_budget_view_mode_check') then

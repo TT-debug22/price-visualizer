@@ -39,6 +39,7 @@ export interface UserPriceSettings {
   preferredChartPeriod: ChartPeriod;
   stalePriceCheckDays: number;
   wishlistBudget: number;
+  monthlyHouseholdBudget: number;
   budgetPeriod: BudgetPeriod;
   defaultBudgetViewMode: BudgetViewMode;
 }
@@ -222,6 +223,7 @@ export const DEFAULT_PRICE_SETTINGS: UserPriceSettings = {
   preferredChartPeriod: "90d",
   stalePriceCheckDays: 14,
   wishlistBudget: 150000,
+  monthlyHouseholdBudget: 250000,
   budgetPeriod: "one_time",
   defaultBudgetViewMode: "planned"
 };
@@ -283,4 +285,9 @@ export const BUDGET_PERIOD_LABELS: Record<BudgetPeriod, string> = {
   one_time: "今回の買い物",
   monthly: "月次",
   yearly: "年次"
+};
+
+export const LEDGER_ENTRY_TYPE_LABELS: Record<LedgerEntryType, string> = {
+  expense: "支出",
+  income: "収入"
 };

@@ -5,12 +5,14 @@ import { useEffect, useMemo, useState, type ComponentType } from "react";
 import {
   AlertTriangle,
   BarChart3,
+  CalendarDays,
   CheckCircle2,
   Clock3,
   LayoutDashboard,
   ListChecks,
   LogOut,
   Plus,
+  ReceiptText,
   Save,
   Settings,
   ShoppingCart,
@@ -24,6 +26,8 @@ import type {
   BudgetViewMode,
   ChartPeriod,
   DailyRepresentativeMode,
+  LedgerEntry,
+  LedgerEntryType,
   MustHaveLevel,
   Offer,
   PriceAppState,
@@ -39,6 +43,7 @@ import {
   BUDGET_PERIOD_LABELS,
   BUDGET_VIEW_LABELS,
   CHART_PERIOD_LABELS,
+  LEDGER_ENTRY_TYPE_LABELS,
   MUST_HAVE_LABELS,
   PRICE_TYPE_LABELS,
   STOCK_STATUS_LABELS,
@@ -59,6 +64,7 @@ import {
 } from "@/domain/price-analytics";
 import { changeSummary, currentLowestRelationship, dashboardBuckets, evaluateCurrentPrice } from "@/domain/price-evaluation";
 import { budgetEvidence, calculateBudgetSummary, groupProductsByCategory, wishlistPrice } from "@/domain/wishlist";
+import { buildLedgerMonthSummary, buildLedgerTrend, defaultLedgerDate, ledgerMonthKey, ledgerMonthLabel } from "@/domain/ledger";
 
 const PriceTrendChart = dynamic(() => import("./PriceTrendChart"), {
   ssr: false,
@@ -68,16 +74,18 @@ const PriceTrendChart = dynamic(() => import("./PriceTrendChart"), {
 const NOW = new Date("2026-07-05T04:00:00.000Z");
 const CLOUD_MODE = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-type AppTab = "overview" | "wishlist" | "price" | "settings";
+type AppTab = "overview" | "wishlist" | "ledger" | "price" | "settings";
 
 const APP_TABS: Array<{ key: AppTab; label: string; icon: ComponentType<{ size?: number }> }> = [
   { key: "overview", label: "トップ", icon: LayoutDashboard },
   { key: "wishlist", label: "リスト", icon: ListChecks },
+  { key: "ledger", label: "家計簿", icon: Wallet },
   { key: "price", label: "詳細", icon: BarChart3 },
   { key: "settings", label: "設定", icon: Settings }
 ];
 
 const CATEGORY_COLORS = ["#176b87", "#0f766e", "#9a3412", "#7c3aed", "#be123c", "#2563eb", "#ca8a04", "#475569"];
+const LEDGER_CATEGORIES = ["食費", "日用品", "交通", "趣味", "通信", "住居", "医療", "その他"];
 
 interface CategorySlice {
   category: string;
@@ -137,6 +145,19 @@ function conicGradient(slices: CategorySlice[], total: number): string {
     return `${slice.color} ${start}% ${end}%`;
   });
   return `conic-gradient(${segments.join(", ")})`;
+}
+
+function ledgerCategorySlices(entries: Array<{ category: string; amount: number; count: number }>): CategorySlice[] {
+  return entries.map((entry) => ({
+    category: entry.category,
+    total: entry.amount,
+    count: entry.count,
+    color: categoryColor(entry.category)
+  }));
+}
+
+function maxTrendAmount(points: Array<{ incomeTotal: number; expenseTotal: number }>): number {
+  return Math.max(1, ...points.flatMap((point) => [point.incomeTotal, point.expenseTotal]));
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
@@ -289,15 +310,18 @@ function BudgetOverview({
   state,
   mode,
   onModeChange,
-  onOpenProduct
+  onOpenProduct,
+  onOpenLedger
 }: {
   state: PriceAppState;
   mode: BudgetViewMode;
   onModeChange: (mode: BudgetViewMode) => void;
   onOpenProduct: (productId: string) => void;
+  onOpenLedger: () => void;
 }) {
   const summary = calculateBudgetSummary(state, mode);
   const slices = categorySlices(summary.products);
+  const ledgerSummary = buildLedgerMonthSummary(state.ledgerEntries, ledgerMonthKey(NOW), state.settings.monthlyHouseholdBudget);
   const usage = summary.budget > 0 ? Math.min(100, Math.round((summary.total / summary.budget) * 100)) : 0;
   const unsetCount = summary.products.filter((product) => wishlistPrice(product) === 0).length;
   const chartBackground = conicGradient(slices, summary.total);
@@ -394,12 +418,18 @@ function BudgetOverview({
         </section>
         <section className="overview-panel">
           <div className="section-heading compact">
-            <h2>家計簿準備</h2>
+            <h2>今月の家計簿</h2>
             <Wallet size={18} />
           </div>
-          <p className="muted">
-            月次・年次の支出記録を保存できるデータ構造を用意しました。将来は購入済みの商品を家計簿へ移し、月別・年別の合計に反映できます。
-          </p>
+          <div className="mini-ledger-summary">
+            <span>支出</span>
+            <strong>{yen(ledgerSummary.expenseTotal)}</strong>
+            <span>{ledgerSummary.isOverBudget ? "予算超過" : "予算残り"}</span>
+            <strong className={ledgerSummary.isOverBudget ? "up" : "down"}>{yen(Math.abs(ledgerSummary.budgetRemaining))}</strong>
+          </div>
+          <button className="text-button" onClick={onOpenLedger}>
+            家計簿を開く
+          </button>
         </section>
       </div>
     </section>
@@ -531,6 +561,220 @@ function Dashboard({ state, onSelectProduct }: { state: PriceAppState; onSelectP
           )}
         </div>
       ))}
+    </section>
+  );
+}
+
+function LedgerEntryList({ entries }: { entries: LedgerEntry[] }) {
+  if (entries.length === 0) {
+    return <p className="muted">この月の記録はまだありません。</p>;
+  }
+
+  return (
+    <div className="ledger-list" data-testid="ledger-entry-list">
+      {entries.map((entry) => (
+        <div className="ledger-row" key={entry.id}>
+          <span className="ledger-row-icon" style={{ background: categoryColor(entry.category) }}>
+            {entry.entryType === "income" ? "+" : "-"}
+          </span>
+          <div>
+            <strong>{entry.title}</strong>
+            <small>
+              {entry.occurredOn} / {entry.category}
+            </small>
+          </div>
+          <strong className={entry.entryType === "income" ? "down" : "up"}>
+            {entry.entryType === "income" ? "+" : "-"}
+            {yen(entry.amount)}
+          </strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HouseholdBook({ state, onStateChange }: { state: PriceAppState; onStateChange: (state: PriceAppState) => void }) {
+  const [month, setMonth] = useState(ledgerMonthKey(NOW));
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const summary = buildLedgerMonthSummary(state.ledgerEntries, month, state.settings.monthlyHouseholdBudget);
+  const slices = ledgerCategorySlices(summary.categorySummaries);
+  const chartBackground = conicGradient(slices, summary.expenseTotal);
+  const budgetUsage = summary.budget > 0 ? Math.min(100, Math.round((summary.expenseTotal / summary.budget) * 100)) : 0;
+  const trend = buildLedgerTrend(state.ledgerEntries, month, 6);
+  const trendMax = maxTrendAmount(trend);
+
+  async function submit(formData: FormData) {
+    setMessage(null);
+    setError(null);
+    try {
+      const nextState = await parseResponse<PriceAppState>(
+        await fetch("/api/ledger", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(Object.fromEntries(formData))
+        })
+      );
+      onStateChange(nextState);
+      setMessage("家計簿に記録しました");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "家計簿を記録できませんでした");
+    }
+  }
+
+  return (
+    <section className="ledger-page" aria-label="家計簿">
+      <div className="section-heading ledger-heading">
+        <div>
+          <p className="eyebrow">Household Book</p>
+          <h2>{ledgerMonthLabel(month)}の家計簿</h2>
+        </div>
+        <label className="month-control">
+          対象月
+          <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} data-testid="ledger-month-input" />
+        </label>
+      </div>
+
+      <section className="ledger-hero">
+        <div className="ledger-summary-cards">
+          <div>
+            <span>収入</span>
+            <strong className="down">{yen(summary.incomeTotal)}</strong>
+          </div>
+          <div>
+            <span>支出</span>
+            <strong className="up">{yen(summary.expenseTotal)}</strong>
+          </div>
+          <div>
+            <span>収支</span>
+            <strong className={summary.balance >= 0 ? "down" : "up"}>{signedYen(summary.balance)}</strong>
+          </div>
+          <div>
+            <span>{summary.isOverBudget ? "予算超過" : "予算残り"}</span>
+            <strong className={summary.isOverBudget ? "up" : "down"}>{yen(Math.abs(summary.budgetRemaining))}</strong>
+          </div>
+        </div>
+        <div className="ledger-budget-meter">
+          <div>
+            <span>月予算 {yen(summary.budget)}</span>
+            <strong>{budgetUsage}%</strong>
+          </div>
+          <div className="budget-meter" aria-label={`家計簿予算使用率 ${budgetUsage}%`}>
+            <span style={{ width: `${budgetUsage}%` }} />
+          </div>
+        </div>
+      </section>
+
+      <div className="ledger-grid">
+        <section className="ledger-chart-card">
+          <div className="section-heading compact">
+            <h2>支出内訳</h2>
+            <ReceiptText size={18} />
+          </div>
+          <div className="budget-chart-panel ledger-chart-panel">
+            <div className="budget-donut" style={{ background: chartBackground }}>
+              <span>
+                支出
+                <strong>{yen(summary.expenseTotal)}</strong>
+              </span>
+            </div>
+            <div className="category-legend">
+              {slices.length === 0 ? (
+                <p className="muted">支出を記録すると内訳が表示されます。</p>
+              ) : (
+                slices.map((slice) => (
+                  <div key={slice.category}>
+                    <span className="category-swatch" style={{ background: slice.color }} />
+                    <span>{slice.category}</span>
+                    <strong>{yen(slice.total)}</strong>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="ledger-form-card">
+          <div className="section-heading compact">
+            <h2>記録する</h2>
+            <CalendarDays size={18} />
+          </div>
+          <form action={submit} className="ledger-form" data-testid="ledger-form">
+            <label>
+              内容
+              <input name="title" required placeholder="例: スーパー、給与、交通費" />
+            </label>
+            <div className="ledger-form-row">
+              <label>
+                金額
+                <input name="amount" type="number" min="0" required placeholder="例: 3200" />
+              </label>
+              <label>
+                種別
+                <select name="entryType" defaultValue="expense" data-testid="ledger-entry-type">
+                  {(Object.keys(LEDGER_ENTRY_TYPE_LABELS) as LedgerEntryType[]).map((key) => (
+                    <option key={key} value={key}>
+                      {LEDGER_ENTRY_TYPE_LABELS[key]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="ledger-form-row">
+              <label>
+                カテゴリ
+                <input name="category" list="ledger-categories" defaultValue="食費" />
+                <datalist id="ledger-categories">
+                  {LEDGER_CATEGORIES.map((category) => (
+                    <option key={category} value={category} />
+                  ))}
+                </datalist>
+              </label>
+              <label>
+                日付
+                <input name="occurredOn" type="date" defaultValue={defaultLedgerDate(month, NOW)} />
+              </label>
+            </div>
+            <label>
+              メモ
+              <input name="note" placeholder="必要ならメモ" />
+            </label>
+            {error && <p className="form-error">{error}</p>}
+            {message && <p className="success-text">{message}</p>}
+            <button type="submit" className="primary-button">
+              家計簿に追加
+            </button>
+          </form>
+        </section>
+
+        <section className="ledger-list-card">
+          <div className="section-heading compact">
+            <h2>この月の記録</h2>
+            <span>
+              支出 {summary.expenseCount}件 / 収入 {summary.incomeCount}件
+            </span>
+          </div>
+          <LedgerEntryList entries={summary.entries} />
+        </section>
+
+        <section className="ledger-trend-card">
+          <div className="section-heading compact">
+            <h2>6か月の流れ</h2>
+            <span>支出と収入</span>
+          </div>
+          <div className="ledger-trend" aria-label="過去6か月の収支">
+            {trend.map((point) => (
+              <div key={point.month}>
+                <span>{point.label}</span>
+                <div className="trend-bars">
+                  <span className="trend-income" style={{ height: `${Math.max(4, (point.incomeTotal / trendMax) * 100)}%` }} />
+                  <span className="trend-expense" style={{ height: `${Math.max(4, (point.expenseTotal / trendMax) * 100)}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
     </section>
   );
 }
@@ -1274,6 +1518,10 @@ function GlobalSettings({ state, onUpdated }: { state: PriceAppState; onUpdated:
           <input name="wishlistBudget" type="number" min="0" defaultValue={state.settings.wishlistBudget} />
         </label>
         <label>
+          家計簿 月予算
+          <input name="monthlyHouseholdBudget" type="number" min="0" defaultValue={state.settings.monthlyHouseholdBudget} />
+        </label>
+        <label>
           予算期間
           <select name="budgetPeriod" defaultValue={state.settings.budgetPeriod}>
             {(Object.keys(BUDGET_PERIOD_LABELS) as BudgetPeriod[]).map((key) => (
@@ -1319,6 +1567,49 @@ function GlobalSettings({ state, onUpdated }: { state: PriceAppState; onUpdated:
       </form>
       {message && <p className="success-text">{message}</p>}
     </section>
+  );
+}
+
+function AppFooter({
+  state,
+  plannedSummary,
+  onSignOut
+}: {
+  state: PriceAppState;
+  plannedSummary: ReturnType<typeof calculateBudgetSummary>;
+  onSignOut: () => void;
+}) {
+  const primarySummary = calculateBudgetSummary(state, "primary");
+  return (
+    <footer className="app-footer">
+      <div className="app-status-footer" data-testid="app-status-footer">
+        <span>
+          <CheckCircle2 size={16} /> {CLOUD_MODE ? "クラウド同期" : "ローカルデモ"}
+        </span>
+        <span>
+          <ShoppingCart size={16} /> 購入予定 {plannedSummary.itemCount}件
+        </span>
+        <span>
+          <Wallet size={16} /> 購入予定 {yen(plannedSummary.total)} / {yen(plannedSummary.budget)}
+        </span>
+        <span>
+          <Wallet size={16} /> 第一候補 {yen(primarySummary.total)} / {yen(primarySummary.budget)}
+        </span>
+        <span>
+          <Clock3 size={16} /> 価格履歴 {state.histories.length}件
+        </span>
+        {CLOUD_MODE && (
+          <button className="text-icon-button" onClick={onSignOut}>
+            <LogOut size={16} /> ログアウト
+          </button>
+        )}
+      </div>
+      <p className="footnote">
+        <TrendingDown size={16} />
+        URLからの自動取得はまだ実装していません。各サイトの規約やAPI条件を確認したうえで、価格取得処理だけを後から接続できる設計にしています。
+        <TrendingUp size={16} />
+      </p>
+    </footer>
   );
 }
 
@@ -1397,30 +1688,11 @@ export function PriceApp() {
           <p className="eyebrow">Wishlist Planner</p>
           <h1>ほしい物リストと予算</h1>
         </div>
-        <div className="topbar-status">
-          <span>
-            <CheckCircle2 size={16} /> {CLOUD_MODE ? "クラウド同期" : "ローカルデモ"}
-          </span>
-          <span>
-            <ShoppingCart size={16} /> 購入予定 {plannedSummary.itemCount}件
-          </span>
-          <span>
-            <Wallet size={16} /> {yen(plannedSummary.total)} / {yen(plannedSummary.budget)}
-          </span>
-          <span>
-            <Clock3 size={16} /> 価格履歴 {state.histories.length}件
-          </span>
-          {CLOUD_MODE && (
-            <button className="text-icon-button" onClick={() => void signOut()}>
-              <LogOut size={16} /> ログアウト
-            </button>
-          )}
-        </div>
       </header>
       <AppTabs activeTab={activeTab} onChange={setActiveTab} />
 
       {activeTab === "overview" && (
-        <BudgetOverview state={state} mode={budgetMode} onModeChange={setBudgetMode} onOpenProduct={openProduct} />
+        <BudgetOverview state={state} mode={budgetMode} onModeChange={setBudgetMode} onOpenProduct={openProduct} onOpenLedger={() => setActiveTab("ledger")} />
       )}
 
       {activeTab === "wishlist" && (
@@ -1434,6 +1706,8 @@ export function PriceApp() {
           <WishlistCategoryList state={state} onOpenProduct={openProduct} />
         </div>
       )}
+
+      {activeTab === "ledger" && <HouseholdBook state={state} onStateChange={setState} />}
 
       {activeTab === "price" && (
         <div className="workspace">
@@ -1476,11 +1750,7 @@ export function PriceApp() {
           }}
         />
       )}
-      <footer className="footnote">
-        <TrendingDown size={16} />
-        URLからの自動取得はまだ実装していません。各サイトの規約やAPI条件を確認したうえで、価格取得処理だけを後から接続できる設計にしています。
-        <TrendingUp size={16} />
-      </footer>
+      <AppFooter state={state} plannedSummary={plannedSummary} onSignOut={() => void signOut()} />
     </main>
   );
 }

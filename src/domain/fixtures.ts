@@ -1,4 +1,4 @@
-import type { PriceAppState, PriceHistory, Product } from "./price-types";
+import type { LedgerEntry, PriceAppState, PriceHistory, Product } from "./price-types";
 import { DEFAULT_PRICE_SETTINGS } from "./price-types";
 
 const USER_ID = "demo-user";
@@ -332,14 +332,78 @@ export function createInitialState(): PriceAppState {
     })
   ];
 
+  const ledgerEntries: LedgerEntry[] = [
+    {
+      id: "ledger-income-1",
+      userId: USER_ID,
+      productId: null,
+      title: "給与",
+      amount: 320000,
+      entryType: "income",
+      category: "給与",
+      occurredOn: "2026-07-01",
+      note: null,
+      createdAt: "2026-07-01T09:00:00.000Z"
+    },
+    {
+      id: "ledger-food-1",
+      userId: USER_ID,
+      productId: null,
+      title: "スーパー",
+      amount: 6800,
+      entryType: "expense",
+      category: "食費",
+      occurredOn: "2026-07-02",
+      note: "平日のまとめ買い",
+      createdAt: "2026-07-02T10:00:00.000Z"
+    },
+    {
+      id: "ledger-daily-1",
+      userId: USER_ID,
+      productId: null,
+      title: "日用品",
+      amount: 4300,
+      entryType: "expense",
+      category: "日用品",
+      occurredOn: "2026-07-03",
+      note: null,
+      createdAt: "2026-07-03T09:00:00.000Z"
+    },
+    {
+      id: "ledger-hobby-1",
+      userId: USER_ID,
+      productId: "product-coffee",
+      title: "コーヒー豆",
+      amount: 4500,
+      entryType: "expense",
+      category: "趣味",
+      occurredOn: "2026-07-04",
+      note: "欲しいものから購入",
+      createdAt: "2026-07-04T11:00:00.000Z"
+    },
+    {
+      id: "ledger-transport-1",
+      userId: USER_ID,
+      productId: null,
+      title: "交通費",
+      amount: 1280,
+      entryType: "expense",
+      category: "交通",
+      occurredOn: "2026-06-28",
+      note: null,
+      createdAt: "2026-06-28T10:00:00.000Z"
+    }
+  ];
+
   return {
     userId: USER_ID,
     products,
     histories,
     settings: {
       ...DEFAULT_PRICE_SETTINGS,
-      userId: USER_ID
+      userId: USER_ID,
+      monthlyHouseholdBudget: 180000
     },
-    ledgerEntries: []
+    ledgerEntries
   };
 }

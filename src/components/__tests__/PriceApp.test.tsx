@@ -16,21 +16,45 @@ vi.mock("next/dynamic", () => ({
 }));
 
 function mockFetch(state: PriceAppState) {
+  let currentState = state;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/api/state")) {
-        return new Response(JSON.stringify(state), { status: 200, headers: { "Content-Type": "application/json" } });
+        return new Response(JSON.stringify(currentState), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (String(url).includes("/api/ledger") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        currentState = {
+          ...currentState,
+          ledgerEntries: [
+            {
+              id: "ledger-test",
+              userId: currentState.userId,
+              productId: null,
+              title: body.title,
+              amount: Number(body.amount),
+              entryType: body.entryType,
+              category: body.category,
+              occurredOn: body.occurredOn,
+              note: body.note,
+              createdAt: "2026-07-06T00:00:00.000Z"
+            },
+            ...currentState.ledgerEntries
+          ]
+        };
+        return new Response(JSON.stringify(currentState), { status: 201, headers: { "Content-Type": "application/json" } });
       }
       if (String(url).includes("/api/products/") && init?.method === "PATCH") {
         const body = JSON.parse(String(init.body));
         const nextState = {
-          ...state,
-          products: state.products.map((product) => (product.id === "product-headphones" ? { ...product, targetPrice: Number(body.targetPrice) } : product))
+          ...currentState,
+          products: currentState.products.map((product) => (product.id === "product-headphones" ? { ...product, targetPrice: Number(body.targetPrice) } : product))
         };
+        currentState = nextState;
         return new Response(JSON.stringify(nextState), { status: 200, headers: { "Content-Type": "application/json" } });
       }
-      return new Response(JSON.stringify(state), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify(currentState), { status: 200, headers: { "Content-Type": "application/json" } });
     })
   );
 }
@@ -59,6 +83,32 @@ describe("PriceApp", () => {
     await userEvent.click(screen.getByTestId("budget-mode-primary"));
     expect(await screen.findByText("第一候補の予算チェック")).toBeInTheDocument();
     expect(screen.getByTestId("budget-product-list")).toHaveTextContent("27インチ 4K モニター");
+  });
+
+  it("補助ステータスをページ下部に表示する", async () => {
+    mockFetch(createInitialState());
+    render(<PriceApp />);
+    const footer = await screen.findByTestId("app-status-footer");
+    expect(footer).toHaveTextContent("ローカルデモ");
+    expect(footer).toHaveTextContent("購入予定");
+    expect(footer).toHaveTextContent("第一候補");
+    expect(footer).toHaveTextContent("価格履歴");
+  });
+
+  it("家計簿タブで月次サマリーを確認し、支出を記録できる", async () => {
+    mockFetch(createInitialState());
+    render(<PriceApp />);
+    await userEvent.click(await screen.findByTestId("tab-ledger"));
+    expect(await screen.findByText("2026年7月の家計簿")).toBeInTheDocument();
+    expect(screen.getByTestId("ledger-entry-list")).toHaveTextContent("スーパー");
+
+    const form = screen.getByTestId("ledger-form");
+    await userEvent.type(within(form).getByPlaceholderText("例: スーパー、給与、交通費"), "ランチ");
+    await userEvent.type(within(form).getByPlaceholderText("例: 3200"), "1200");
+    await userEvent.click(within(form).getByRole("button", { name: "家計簿に追加" }));
+
+    expect(await screen.findByText("家計簿に記録しました")).toBeInTheDocument();
+    expect(screen.getByTestId("ledger-entry-list")).toHaveTextContent("ランチ");
   });
 
   it("期間切り替えができる", async () => {

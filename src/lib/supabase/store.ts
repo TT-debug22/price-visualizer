@@ -3,6 +3,7 @@ import type {
   BudgetPeriod,
   BudgetViewMode,
   LedgerEntry,
+  LedgerEntryType,
   MustHaveLevel,
   Offer,
   PriceAppState,
@@ -98,6 +99,7 @@ interface SettingsRow {
   preferred_chart_period: UserPriceSettings["preferredChartPeriod"];
   stale_price_check_days: number;
   wishlist_budget: number | null;
+  monthly_household_budget: number | null;
   budget_period: BudgetPeriod | null;
   default_budget_view_mode: BudgetViewMode | null;
 }
@@ -146,6 +148,10 @@ function parseBudgetViewMode(value: unknown): BudgetViewMode {
 function parseBudgetPeriod(value: unknown): BudgetPeriod {
   if (value === "monthly" || value === "yearly") return value;
   return "one_time";
+}
+
+function parseLedgerEntryType(value: unknown): LedgerEntryType {
+  return value === "income" ? "income" : "expense";
 }
 
 function parseRank(value: unknown): number {
@@ -245,6 +251,7 @@ function settingsFromRow(row: SettingsRow | null, userId: string): UserPriceSett
     preferredChartPeriod: row.preferred_chart_period,
     stalePriceCheckDays: row.stale_price_check_days,
     wishlistBudget: row.wishlist_budget ?? DEFAULT_PRICE_SETTINGS.wishlistBudget,
+    monthlyHouseholdBudget: row.monthly_household_budget ?? DEFAULT_PRICE_SETTINGS.monthlyHouseholdBudget,
     budgetPeriod: parseBudgetPeriod(row.budget_period),
     defaultBudgetViewMode: parseBudgetViewMode(row.default_budget_view_mode)
   };
@@ -257,7 +264,7 @@ function ledgerEntryFromRow(row: LedgerEntryRow): LedgerEntry {
     productId: row.product_id,
     title: row.title,
     amount: row.amount,
-    entryType: row.entry_type,
+    entryType: parseLedgerEntryType(row.entry_type),
     category: row.category,
     occurredOn: row.occurred_on,
     note: row.note,
@@ -314,6 +321,21 @@ function historyToRow(history: PriceHistory): HistoryRow {
   };
 }
 
+function ledgerEntryToRow(entry: LedgerEntry): LedgerEntryRow {
+  return {
+    id: entry.id,
+    user_id: entry.userId,
+    product_id: entry.productId ?? null,
+    title: entry.title,
+    amount: entry.amount,
+    entry_type: entry.entryType,
+    category: entry.category,
+    occurred_on: entry.occurredOn,
+    note: entry.note ?? null,
+    created_at: entry.createdAt
+  };
+}
+
 async function assertOk<T>(query: PromiseLike<{ data: T; error: { message: string } | null }>): Promise<T> {
   const { data, error } = await query;
   if (error) throw new Error(error.message);
@@ -336,6 +358,7 @@ async function ensureSettings(supabase: SupabaseClient, userId: string): Promise
     preferred_chart_period: defaults.preferredChartPeriod,
     stale_price_check_days: defaults.stalePriceCheckDays,
     wishlist_budget: defaults.wishlistBudget,
+    monthly_household_budget: defaults.monthlyHouseholdBudget,
     budget_period: defaults.budgetPeriod,
     default_budget_view_mode: defaults.defaultBudgetViewMode
   };
@@ -573,6 +596,28 @@ export async function updateSupabaseHistoryExclusion(productId: string, historyI
   return readSupabaseState();
 }
 
+export async function createSupabaseLedgerEntry(input: Record<string, unknown>): Promise<PriceAppState> {
+  const supabase = await createSupabaseServerClient();
+  const userId = await getAuthenticatedUserId();
+  const amount = toNumberOrNull(String(input.amount ?? ""));
+  if (amount === null || amount < 0) throw new Error("金額は0円以上で入力してください");
+  const now = new Date().toISOString();
+  const entry: LedgerEntry = {
+    id: newId("ledger"),
+    userId,
+    productId: textOrNull(input.productId),
+    title: textOrNull(input.title) ?? "家計簿メモ",
+    amount,
+    entryType: parseLedgerEntryType(input.entryType),
+    category: textOrNull(input.category) ?? "未分類",
+    occurredOn: textOrNull(input.occurredOn) ?? now.slice(0, 10),
+    note: textOrNull(input.note),
+    createdAt: now
+  };
+  await assertOk(supabase.from("ledger_entries").insert(ledgerEntryToRow(entry)));
+  return readSupabaseState();
+}
+
 export async function updateSupabaseSettings(input: Record<string, unknown>): Promise<PriceAppState> {
   const supabase = await createSupabaseServerClient();
   const userId = await getAuthenticatedUserId();
@@ -584,7 +629,8 @@ export async function updateSupabaseSettings(input: Record<string, unknown>): Pr
     largeDropAbsoluteThreshold: "large_drop_absolute_threshold",
     largeDropPercentageThreshold: "large_drop_percentage_threshold",
     stalePriceCheckDays: "stale_price_check_days",
-    wishlistBudget: "wishlist_budget"
+    wishlistBudget: "wishlist_budget",
+    monthlyHouseholdBudget: "monthly_household_budget"
   } as const;
   for (const [from, to] of Object.entries(mappings)) {
     if (from in input) {

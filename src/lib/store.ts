@@ -3,6 +3,8 @@ import path from "node:path";
 import type {
   BudgetPeriod,
   BudgetViewMode,
+  LedgerEntry,
+  LedgerEntryType,
   MustHaveLevel,
   Offer,
   PriceAppState,
@@ -21,6 +23,7 @@ import { createPriceHistory, latestHistoryForOffer, shouldCreatePriceHistory } f
 import { isSupabaseConfigured } from "./supabase/env";
 import {
   createSupabaseProduct,
+  createSupabaseLedgerEntry,
   readSupabaseState,
   recordSupabaseProductPrice,
   updateSupabaseHistoryExclusion,
@@ -94,6 +97,10 @@ function parseBudgetPeriod(value: unknown): BudgetPeriod {
   return "one_time";
 }
 
+function parseLedgerEntryType(value: unknown): LedgerEntryType {
+  return value === "income" ? "income" : "expense";
+}
+
 function parseRank(value: unknown): number {
   const rank = Math.trunc(toNumberOrNull(String(value ?? "")) ?? 1);
   return Number.isFinite(rank) && rank > 0 ? rank : 1;
@@ -121,17 +128,31 @@ function normalizeProduct(product: Product): Product {
   };
 }
 
+function normalizeLedgerEntry(entry: LedgerEntry, userId: string): LedgerEntry {
+  return {
+    ...entry,
+    userId,
+    productId: entry.productId ?? null,
+    amount: Math.max(0, Number.isFinite(entry.amount) ? entry.amount : 0),
+    entryType: parseLedgerEntryType(entry.entryType),
+    category: entry.category || "未分類",
+    occurredOn: entry.occurredOn || new Date().toISOString().slice(0, 10),
+    note: entry.note ?? null
+  };
+}
+
 function normalizeState(state: PriceAppState): PriceAppState {
   return {
     ...state,
     products: state.products.map(normalizeProduct),
     histories: state.histories ?? [],
-    ledgerEntries: state.ledgerEntries ?? [],
+    ledgerEntries: (state.ledgerEntries ?? []).map((entry) => normalizeLedgerEntry(entry, state.userId)),
     settings: {
       ...DEFAULT_PRICE_SETTINGS,
       ...state.settings,
       userId: state.userId,
       wishlistBudget: state.settings?.wishlistBudget ?? DEFAULT_PRICE_SETTINGS.wishlistBudget,
+      monthlyHouseholdBudget: state.settings?.monthlyHouseholdBudget ?? DEFAULT_PRICE_SETTINGS.monthlyHouseholdBudget,
       budgetPeriod: parseBudgetPeriod(state.settings?.budgetPeriod),
       defaultBudgetViewMode: parseBudgetViewMode(state.settings?.defaultBudgetViewMode)
     }
@@ -335,6 +356,29 @@ export async function updateHistoryExclusion(productId: string, historyId: strin
   return state;
 }
 
+export async function createLedgerEntry(input: Record<string, unknown>): Promise<PriceAppState> {
+  if (isSupabaseConfigured()) return createSupabaseLedgerEntry(input);
+  const state = await readState();
+  const amount = toNumberOrNull(String(input.amount ?? ""));
+  if (amount === null || amount < 0) throw new Error("金額は0円以上で入力してください");
+  const now = new Date().toISOString();
+  const entry: LedgerEntry = {
+    id: newId("ledger"),
+    userId: state.userId,
+    productId: textOrNull(input.productId),
+    title: textOrNull(input.title) ?? "家計簿メモ",
+    amount,
+    entryType: parseLedgerEntryType(input.entryType),
+    category: textOrNull(input.category) ?? "未分類",
+    occurredOn: textOrNull(input.occurredOn) ?? now.slice(0, 10),
+    note: textOrNull(input.note),
+    createdAt: now
+  };
+  state.ledgerEntries = [entry, ...(state.ledgerEntries ?? [])];
+  await writeState(state);
+  return state;
+}
+
 export async function updateSettings(input: Record<string, unknown>): Promise<PriceAppState> {
   if (isSupabaseConfigured()) return updateSupabaseSettings(input);
   const state = await readState();
@@ -344,7 +388,8 @@ export async function updateSettings(input: Record<string, unknown>): Promise<Pr
     "largeDropAbsoluteThreshold",
     "largeDropPercentageThreshold",
     "stalePriceCheckDays",
-    "wishlistBudget"
+    "wishlistBudget",
+    "monthlyHouseholdBudget"
   ] as const;
   for (const key of numericKeys) {
     if (key in input) {

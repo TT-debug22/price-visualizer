@@ -79,6 +79,8 @@ button {
 .form-panel,
 .history-panel,
 .footnote,
+.app-footer,
+.app-status-footer,
 .inline-settings {
   width: 100%;
 }
@@ -123,6 +125,7 @@ h2 {
 }
 
 .topbar-status span,
+.app-status-footer span,
 .footnote,
 .text-icon-button {
   display: inline-flex;
@@ -181,6 +184,11 @@ h2 {
 .budget-hero,
 .category-block,
 .comparison-panel,
+.ledger-hero,
+.ledger-chart-card,
+.ledger-form-card,
+.ledger-list-card,
+.ledger-trend-card,
 .chart-shell,
 .empty-chart,
 .add-product,
@@ -366,7 +374,8 @@ h2 {
 }
 
 .overview-grid,
-.comparison-grid {
+.comparison-grid,
+.ledger-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
@@ -374,8 +383,23 @@ h2 {
 
 .overview-panel,
 .category-block,
-.comparison-panel {
+.comparison-panel,
+.ledger-chart-card,
+.ledger-form-card,
+.ledger-list-card,
+.ledger-trend-card {
   padding: 14px;
+}
+
+.mini-ledger-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.mini-ledger-summary span {
+  color: var(--muted);
 }
 
 .compact-list,
@@ -513,6 +537,166 @@ h2 {
   border: 0;
   padding: 0;
   text-align: left;
+}
+
+.ledger-page {
+  display: grid;
+  gap: 14px;
+}
+
+.ledger-heading {
+  align-items: center;
+}
+
+.month-control {
+  width: min(220px, 100%);
+}
+
+.ledger-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 14px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.ledger-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ledger-summary-cards div,
+.ledger-budget-meter {
+  display: grid;
+  gap: 6px;
+  min-height: 78px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.ledger-summary-cards span,
+.ledger-budget-meter span,
+.ledger-list-card small,
+.ledger-trend-card span {
+  color: var(--muted);
+}
+
+.ledger-summary-cards strong {
+  font-size: 22px;
+  overflow-wrap: anywhere;
+}
+
+.ledger-budget-meter {
+  align-content: center;
+}
+
+.ledger-budget-meter > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ledger-chart-card,
+.ledger-form-card,
+.ledger-list-card,
+.ledger-trend-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ledger-chart-card {
+  grid-column: span 2;
+}
+
+.ledger-chart-panel {
+  margin-top: 10px;
+}
+
+.ledger-form {
+  display: grid;
+  gap: 10px;
+}
+
+.ledger-form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ledger-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ledger-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.ledger-row-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.ledger-row div {
+  display: grid;
+  gap: 3px;
+}
+
+.ledger-row > strong {
+  white-space: nowrap;
+}
+
+.ledger-trend {
+  min-height: 190px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+  padding-top: 12px;
+}
+
+.ledger-trend > div {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+
+.trend-bars {
+  height: 130px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+}
+
+.trend-bars span {
+  width: 10px;
+  min-height: 4px;
+  border-radius: 999px 999px 0 0;
+}
+
+.trend-income {
+  background: var(--accent-2);
+}
+
+.trend-expense {
+  background: var(--danger);
 }
 
 .workspace {
@@ -699,10 +883,12 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.down,
 .down strong {
   color: var(--good);
 }
 
+.up,
 .up strong {
   color: var(--danger);
 }
@@ -999,9 +1185,27 @@ th {
   margin-bottom: 12px;
 }
 
+.app-footer {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.app-status-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .footnote {
   justify-content: center;
-  margin-top: 16px;
   color: var(--muted);
   font-size: 13px;
   text-align: center;
@@ -1029,15 +1233,21 @@ th {
   }
 
   .overview-grid,
-  .comparison-grid {
+  .comparison-grid,
+  .ledger-grid {
     grid-template-columns: 1fr;
+  }
+
+  .ledger-chart-card {
+    grid-column: auto;
   }
 
   .workspace {
     grid-template-columns: 1fr;
   }
 
-  .summary-grid {
+  .summary-grid,
+  .ledger-summary-cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
@@ -1077,6 +1287,11 @@ th {
   .overview-panel,
   .category-block,
   .comparison-panel,
+  .ledger-hero,
+  .ledger-chart-card,
+  .ledger-form-card,
+  .ledger-list-card,
+  .ledger-trend-card,
   .budget-hero,
   .add-product {
     padding: 10px;
@@ -1111,6 +1326,10 @@ th {
   .dashboard,
   .summary-grid,
   .budget-hero,
+  .ledger-hero,
+  .ledger-summary-cards,
+  .ledger-form-row,
+  .ledger-chart-panel,
   .budget-chart-panel,
   .budget-amounts,
   .inline-settings,
@@ -1149,6 +1368,7 @@ th {
   }
 
   .topbar-status span,
+  .app-status-footer span,
   .text-icon-button {
     width: 100%;
     min-height: 34px;
@@ -1156,6 +1376,12 @@ th {
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface);
+  }
+
+  .app-status-footer {
+    display: grid;
+    grid-template-columns: 1fr;
+    padding: 8px;
   }
 
   .detail-labels .small-label,
@@ -1233,6 +1459,24 @@ th {
 
   .category-summary-list small {
     grid-column: 2 / -1;
+  }
+
+  .ledger-row {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .ledger-row > strong {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .ledger-trend {
+    min-height: 150px;
+    gap: 5px;
+  }
+
+  .trend-bars {
+    height: 96px;
   }
 
   .candidate-price {
