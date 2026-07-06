@@ -48,6 +48,7 @@ body {
   color: var(--text);
   font-family: Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
   letter-spacing: 0;
+  overflow-x: hidden;
 }
 
 button,
@@ -64,6 +65,7 @@ button {
   width: min(1520px, 100%);
   margin: 0 auto;
   padding: 20px;
+  overflow-x: hidden;
 }
 
 .topbar,
@@ -490,6 +492,7 @@ h2 {
 .card-meta,
 .muted {
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .price-row {
@@ -667,6 +670,12 @@ select {
   padding: 8px 10px;
 }
 
+input[type="checkbox"] {
+  width: auto;
+  min-width: auto;
+  min-height: auto;
+}
+
 .segmented {
   display: inline-flex;
   flex-wrap: wrap;
@@ -724,6 +733,7 @@ select {
 
 .chart-shell {
   padding: 12px;
+  overflow: hidden;
 }
 
 .empty-chart {
@@ -900,11 +910,15 @@ th {
 
 @media (max-width: 720px) {
   .app-shell {
-    padding: 12px;
+    padding: 10px;
   }
 
   h1 {
-    font-size: 24px;
+    font-size: 22px;
+  }
+
+  h2 {
+    font-size: 15px;
   }
 
   .topbar,
@@ -925,12 +939,17 @@ th {
   .product-panel,
   .settings-panel,
   .form-panel,
-  .history-panel {
-    padding: 12px;
+  .history-panel,
+  .overview-panel,
+  .category-block,
+  .comparison-panel,
+  .budget-hero,
+  .add-product {
+    padding: 10px;
   }
 
   .detail {
-    gap: 12px;
+    gap: 10px;
   }
 
   .detail-header {
@@ -965,14 +984,59 @@ th {
     grid-template-columns: 1fr;
   }
 
+  .app-tabs {
+    gap: 5px;
+    margin-bottom: 12px;
+    padding-bottom: 4px;
+  }
+
+  .app-tabs button {
+    min-height: 38px;
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+
+  .topbar {
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .topbar-status {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .topbar-status span,
+  .text-icon-button {
+    width: 100%;
+    min-height: 34px;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+
+  .detail-labels .small-label,
+  .label-list .small-label {
+    white-space: normal;
+  }
+
   .summary-grid > div {
     min-height: auto;
+    padding: 10px;
   }
 
   .chart-controls {
     display: grid;
     grid-template-columns: 1fr;
     align-items: stretch;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
   }
 
   .chart-controls .select-label,
@@ -982,16 +1046,25 @@ th {
   }
 
   .segmented {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
+    gap: 5px;
   }
 
   .segmented button {
-    flex: 1 1 72px;
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 7px 6px;
+    white-space: normal;
+    line-height: 1.25;
   }
 
   .section-heading,
   .category-header {
     display: grid;
+    gap: 8px;
   }
 
   .candidate-row,
@@ -1007,6 +1080,61 @@ th {
   .save-edit-button,
   .primary-button {
     width: 100%;
+  }
+
+  .form-grid,
+  .inline-settings,
+  .stacked-form,
+  .preview-grid {
+    gap: 8px;
+  }
+
+  label,
+  .select-label {
+    gap: 5px;
+  }
+
+  input,
+  select {
+    min-height: 42px;
+    font-size: 16px;
+  }
+
+  .chart-shell {
+    padding: 8px 0 8px;
+  }
+
+  .chart-shell .recharts-wrapper,
+  .chart-shell .recharts-surface {
+    max-width: 100%;
+  }
+
+  .chart-tooltip {
+    max-width: min(300px, calc(100vw - 28px));
+    font-size: 12px;
+  }
+
+  .selected-point {
+    display: grid;
+    align-items: start;
+    gap: 4px;
+    padding: 8px 2px 0;
+    font-size: 12px;
+  }
+
+  .store-picker {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .store-picker label {
+    justify-content: start;
+    min-height: 34px;
+    padding: 7px 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2);
   }
 
   .table-scroll {

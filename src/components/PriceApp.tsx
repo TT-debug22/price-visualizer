@@ -1123,11 +1123,12 @@ function ProductDetail({ product, state, onStateChange }: { product: Product; st
     <article className="detail">
       <div className="detail-header">
         <div>
-          <p className="eyebrow">
-            {product.category} / {product.detailCategory ?? "未分類"} / 第{product.candidateRank}候補
-          </p>
+          <p className="eyebrow">商品詳細</p>
           <h1>{product.name}</h1>
           <div className="label-list detail-labels">
+            <span className="small-label">{product.category}</span>
+            <span className="small-label">{product.detailCategory ?? "未分類"}</span>
+            <span className="small-label">第{product.candidateRank}候補</span>
             <span className="small-label">{WISHLIST_STATUS_LABELS[product.wishlistStatus]}</span>
             <span className="small-label">優先度 {WISHLIST_PRIORITY_LABELS[product.priority]}</span>
             <span className="small-label">{MUST_HAVE_LABELS[product.mustHaveLevel]}</span>

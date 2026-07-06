@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -31,6 +31,21 @@ interface PriceTrendChartProps {
 }
 
 const SERIES_COLORS = ["#176b87", "#9a3412", "#166534", "#7c3aed", "#be123c", "#0f766e"];
+
+function useCompactChartLayout(): boolean {
+  const [isCompact, setIsCompact] = useState(false);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(max-width: 720px)");
+    const update = () => setIsCompact(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  return isCompact;
+}
 
 function findPreviousRecord(records: PriceHistory[], target: PriceHistory): PriceHistory | null {
   const sorted = records
@@ -96,6 +111,7 @@ export function PriceTrendChart({
   now = new Date()
 }: PriceTrendChartProps) {
   const [selectedPoint, setSelectedPoint] = useState<ChartPoint | null>(null);
+  const isCompact = useCompactChartLayout();
   const metrics = useMemo(() => calculatePriceMetrics(product, histories, settings, now), [product, histories, settings, now]);
   const productRecords = useMemo(() => productHistories(histories, product.id), [histories, product.id]);
   const chartData = useMemo(
@@ -144,10 +160,10 @@ export function PriceTrendChart({
   return (
     <div className="chart-shell" data-testid="price-chart-shell">
       <p className="sr-only">{chartSummary}</p>
-      <ResponsiveContainer width="100%" height={360}>
+      <ResponsiveContainer width="100%" height={isCompact ? 270 : 360}>
         <LineChart
           data={chartData}
-          margin={{ top: 20, right: 26, left: 10, bottom: 12 }}
+          margin={isCompact ? { top: 12, right: 8, left: 0, bottom: 4 } : { top: 20, right: 26, left: 10, bottom: 12 }}
           onClick={handleSelect}
           onTouchStart={handleSelect}
           accessibilityLayer
@@ -156,23 +172,27 @@ export function PriceTrendChart({
           desc={chartSummary}
         >
           <CartesianGrid stroke="#d8dee6" strokeDasharray="4 4" />
-          <XAxis dataKey="date" minTickGap={24} tickFormatter={(value) => String(value).slice(5).replace("-", "/")} />
+          <XAxis dataKey="date" minTickGap={isCompact ? 36 : 24} tick={{ fontSize: isCompact ? 10 : 12 }} tickFormatter={(value) => String(value).slice(5).replace("-", "/")} />
           <YAxis
-            width={76}
+            width={isCompact ? 50 : 76}
+            tick={{ fontSize: isCompact ? 10 : 12 }}
             tickFormatter={(value) => `${Math.round(Number(value)).toLocaleString("ja-JP")}円`}
             domain={[Math.max(0, minY - padding), maxY + padding]}
           />
           <Tooltip content={<PriceTooltip productRecords={productRecords} lowest={lowestRecord} />} />
-          <Legend />
+          <Legend
+            height={isCompact ? 46 : undefined}
+            wrapperStyle={isCompact ? { fontSize: 11, lineHeight: "18px", paddingTop: 4 } : undefined}
+          />
 
           {product.targetPrice != null && (
-            <ReferenceLine y={product.targetPrice} stroke="#0f766e" strokeDasharray="7 4" label={{ value: "目標価格", position: "insideTopRight" }} />
+            <ReferenceLine y={product.targetPrice} stroke="#0f766e" strokeDasharray="7 4" label={{ value: isCompact ? "目標" : "目標価格", position: "insideTopRight" }} />
           )}
           {product.customFloorPrice != null && (
-            <ReferenceLine y={product.customFloorPrice} stroke="#9a3412" strokeDasharray="3 3" label={{ value: "設定底値", position: "insideBottomRight" }} />
+            <ReferenceLine y={product.customFloorPrice} stroke="#9a3412" strokeDasharray="3 3" label={{ value: isCompact ? "底値" : "設定底値", position: "insideBottomRight" }} />
           )}
           {metrics.average90Days != null && (
-            <ReferenceLine y={metrics.average90Days} stroke="#475569" strokeDasharray="2 6" label={{ value: "90日平均", position: "insideTopLeft" }} />
+            <ReferenceLine y={metrics.average90Days} stroke="#475569" strokeDasharray="2 6" label={{ value: isCompact ? "平均" : "90日平均", position: "insideTopLeft" }} />
           )}
 
           {storeViewMode === "by-store"
@@ -248,7 +268,7 @@ export function PriceTrendChart({
               fill="#facc15"
               stroke="#713f12"
               strokeWidth={2}
-              label={{ value: "過去最安", position: "top" }}
+              label={{ value: isCompact ? "最安" : "過去最安", position: "top" }}
               data-testid="lowest-marker"
             />
           )}
