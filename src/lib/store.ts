@@ -20,6 +20,7 @@ import { DEFAULT_PRICE_SETTINGS } from "@/domain/price-types";
 import { createInitialState } from "@/domain/fixtures";
 import { calculateEffectivePrice, toNumberOrNull, validatePriceSnapshot } from "@/domain/price-calculations";
 import { createPriceHistory, latestHistoryForOffer, shouldCreatePriceHistory } from "@/domain/price-history";
+import { normalizeCandidateRanks } from "@/domain/ranking";
 import { isSupabaseConfigured } from "./supabase/env";
 import {
   createSupabaseProduct,
@@ -158,9 +159,10 @@ function normalizeLedgerEntry(entry: LedgerEntry, userId: string): LedgerEntry {
 }
 
 function normalizeState(state: PriceAppState): PriceAppState {
+  const products = normalizeCandidateRanks(state.products.map(normalizeProduct));
   return {
     ...state,
-    products: state.products.map(normalizeProduct),
+    products,
     histories: state.histories ?? [],
     ledgerEntries: (state.ledgerEntries ?? []).map((entry) => normalizeLedgerEntry(entry, state.userId)),
     settings: {
@@ -257,7 +259,7 @@ export async function createProduct(input: Record<string, unknown>): Promise<Pri
     updatedAt: now
   };
 
-  state.products = [product, ...state.products];
+  state.products = normalizeCandidateRanks([product, ...state.products]);
   await writeState(state);
   return state;
 }
@@ -295,6 +297,7 @@ export async function updateProduct(productId: string, input: Record<string, unk
     }
   }
   product.updatedAt = new Date().toISOString();
+  state.products = normalizeCandidateRanks(state.products);
 
   await writeState(state);
   return state;
@@ -306,6 +309,7 @@ export async function deleteProduct(productId: string): Promise<PriceAppState> {
   const product = state.products.find((item) => item.id === productId);
   if (!product) throw new Error("商品が見つかりません");
   state.products = state.products.filter((item) => item.id !== productId);
+  state.products = normalizeCandidateRanks(state.products);
   state.histories = state.histories.filter((history) => history.productId !== productId);
   state.ledgerEntries = state.ledgerEntries.map((entry) => (entry.productId === productId ? { ...entry, productId: null } : entry));
   await writeState(state);

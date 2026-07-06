@@ -67,13 +67,14 @@ import {
 import { changeSummary, currentLowestRelationship, dashboardBuckets, evaluateCurrentPrice } from "@/domain/price-evaluation";
 import { budgetEvidence, calculateBudgetSummary, groupProductsByCategory, wishlistPrice } from "@/domain/wishlist";
 import { buildLedgerMonthSummary, buildLedgerTrend, defaultLedgerDate, ledgerMonthKey, ledgerMonthLabel } from "@/domain/ledger";
+import { ApiResponseError, parseResponse } from "@/lib/api-client";
+import { systemClock, type Clock } from "@/lib/clock";
 
 const PriceTrendChart = dynamic(() => import("./PriceTrendChart"), {
   ssr: false,
   loading: () => <div className="empty-chart">価格推移グラフを読み込んでいます。</div>
 });
 
-const NOW = new Date("2026-07-05T04:00:00.000Z");
 const CLOUD_MODE = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 type AppTab = "overview" | "wishlist" | "ledger" | "price" | "settings";
@@ -94,17 +95,6 @@ interface CategorySlice {
   total: number;
   count: number;
   color: string;
-}
-
-class ApiResponseError extends Error {
-  status: number;
-  authRequired: boolean;
-
-  constructor(message: string, status: number, authRequired = false) {
-    super(message);
-    this.status = status;
-    this.authRequired = authRequired;
-  }
 }
 
 function toneClass(tone: string): string {
@@ -131,7 +121,7 @@ function categorySlices(products: Product[], colorOverrides: Record<string, stri
   for (const product of products) {
     const key = categoryKey(product);
     const current = groups.get(key) ?? { total: 0, count: 0 };
-    groups.set(key, { total: current.total + wishlistPrice(product), count: current.count + 1 });
+    groups.set(key, { total: current.total + (wishlistPrice(product) ?? 0), count: current.count + 1 });
   }
   return Array.from(groups.entries())
     .map(([category, value]) => ({ category, total: value.total, count: value.count, color: categoryColor(category, colorOverrides) }))
@@ -161,12 +151,6 @@ function ledgerCategorySlices(entries: Array<{ category: string; amount: number;
 
 function maxTrendAmount(points: Array<{ incomeTotal: number; expenseTotal: number }>): number {
   return Math.max(1, ...points.flatMap((point) => [point.incomeTotal, point.expenseTotal]));
-}
-
-async function parseResponse<T>(response: Response): Promise<T> {
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new ApiResponseError(body.error ?? "処理に失敗しました", response.status, Boolean(body.authRequired));
-  return body as T;
 }
 
 async function getBrowserSupabase() {
@@ -312,12 +296,14 @@ function ProductVisual({ product, colorOverrides = {} }: { product: Product; col
 function BudgetOverview({
   state,
   mode,
+  now,
   onModeChange,
   onOpenProduct,
   onOpenLedger
 }: {
   state: PriceAppState;
   mode: BudgetViewMode;
+  now: Date;
   onModeChange: (mode: BudgetViewMode) => void;
   onOpenProduct: (productId: string) => void;
   onOpenLedger: () => void;
@@ -325,9 +311,8 @@ function BudgetOverview({
   const summary = calculateBudgetSummary(state, mode);
   const colorOverrides = state.settings.categoryColorOverrides;
   const slices = categorySlices(summary.products, colorOverrides);
-  const ledgerSummary = buildLedgerMonthSummary(state.ledgerEntries, ledgerMonthKey(NOW), state.settings.monthlyHouseholdBudget);
+  const ledgerSummary = buildLedgerMonthSummary(state.ledgerEntries, ledgerMonthKey(now), state.settings.monthlyHouseholdBudget);
   const usage = summary.budget > 0 ? Math.min(100, Math.round((summary.total / summary.budget) * 100)) : 0;
-  const unsetCount = summary.products.filter((product) => wishlistPrice(product) === 0).length;
   const chartBackground = conicGradient(slices, summary.total);
 
   return (
@@ -359,7 +344,7 @@ function BudgetOverview({
             <span style={{ width: `${usage}%` }} />
           </div>
           <p className="budget-evidence">{budgetEvidence(summary)}</p>
-          {unsetCount > 0 && <p className="form-warning">価格未設定の商品が{unsetCount}件あります。合計には0円として入っています。</p>}
+          {summary.unsetPriceCount > 0 && <p className="form-warning">価格未設定の商品が{summary.unsetPriceCount}件あります。合計から除外した暫定額です。</p>}
         </div>
         <div className="budget-chart-panel" aria-label="ジャンル別の金額内訳">
           <div className="budget-donut" style={{ background: chartBackground }}>
@@ -519,15 +504,17 @@ function CandidateComparison({ state, onOpenProduct }: { state: PriceAppState; o
 function ProductCard({
   product,
   state,
+  now,
   selected,
   onSelect
 }: {
   product: Product;
   state: PriceAppState;
+  now: Date;
   selected: boolean;
   onSelect: () => void;
 }) {
-  const metrics = calculatePriceMetrics(product, state.histories, state.settings, NOW);
+  const metrics = calculatePriceMetrics(product, state.histories, state.settings, now);
 
   return (
     <button className={`product-card ${selected ? "is-selected" : ""}`} onClick={onSelect} data-testid={`product-card-${product.id}`}>
@@ -546,8 +533,8 @@ function ProductCard({
   );
 }
 
-function Dashboard({ state, onSelectProduct }: { state: PriceAppState; onSelectProduct: (productId: string) => void }) {
-  const buckets = dashboardBuckets(state, NOW);
+function Dashboard({ state, now, onSelectProduct }: { state: PriceAppState; now: Date; onSelectProduct: (productId: string) => void }) {
+  const buckets = dashboardBuckets(state, now);
   return (
     <section className="dashboard" aria-label="価格ダッシュボード">
       {buckets.map((bucket) => (
@@ -598,8 +585,8 @@ function LedgerEntryList({ entries, colorOverrides }: { entries: LedgerEntry[]; 
   );
 }
 
-function HouseholdBook({ state, onStateChange }: { state: PriceAppState; onStateChange: (state: PriceAppState) => void }) {
-  const [month, setMonth] = useState(ledgerMonthKey(NOW));
+function HouseholdBook({ state, now, onStateChange }: { state: PriceAppState; now: Date; onStateChange: (state: PriceAppState) => void }) {
+  const [month, setMonth] = useState(ledgerMonthKey(now));
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const summary = buildLedgerMonthSummary(state.ledgerEntries, month, state.settings.monthlyHouseholdBudget);
@@ -738,7 +725,7 @@ function HouseholdBook({ state, onStateChange }: { state: PriceAppState; onState
               </label>
               <label>
                 日付
-                <input name="occurredOn" type="date" defaultValue={defaultLedgerDate(month, NOW)} />
+                <input name="occurredOn" type="date" defaultValue={defaultLedgerDate(month, now)} />
               </label>
             </div>
             <label>
@@ -906,8 +893,8 @@ function AddProductForm({ onCreated }: { onCreated: (state: PriceAppState) => vo
   );
 }
 
-function PriceSummary({ product, state }: { product: Product; state: PriceAppState }) {
-  const metrics = calculatePriceMetrics(product, state.histories, state.settings, NOW);
+function PriceSummary({ product, state, now }: { product: Product; state: PriceAppState; now: Date }) {
+  const metrics = calculatePriceMetrics(product, state.histories, state.settings, now);
   const lowest = metrics.allTimeLowestEffective;
   const change = metrics.previousChange;
   const changeLabel = change.direction === "down" ? "値下がり" : change.direction === "up" ? "値上がり" : "変動なし";
@@ -971,8 +958,8 @@ function PriceSummary({ product, state }: { product: Product; state: PriceAppSta
   );
 }
 
-function EvaluationPanel({ product, state }: { product: Product; state: PriceAppState }) {
-  const evaluation = evaluateCurrentPrice(product, state.histories, state.settings, NOW);
+function EvaluationPanel({ product, state, now }: { product: Product; state: PriceAppState; now: Date }) {
+  const evaluation = evaluateCurrentPrice(product, state.histories, state.settings, now);
   return (
     <section className="evaluation-panel">
       <div className={`evaluation-badge ${toneClass(evaluation.tone)}`} data-testid="price-evaluation-label">
@@ -1306,7 +1293,7 @@ function ManualPriceForm({ product, state, onRecorded }: { product: Product; sta
   );
 }
 
-function HistoryTable({ product, state, onUpdated }: { product: Product; state: PriceAppState; onUpdated: (state: PriceAppState) => void }) {
+function HistoryTable({ product, state, now, onUpdated }: { product: Product; state: PriceAppState; now: Date; onUpdated: (state: PriceAppState) => void }) {
   const histories = [...productHistories(state.histories, product.id)].reverse();
 
   async function toggleExclusion(history: PriceHistory) {
@@ -1347,7 +1334,7 @@ function HistoryTable({ product, state, onUpdated }: { product: Product; state: 
             </thead>
             <tbody>
               {histories.map((history) => {
-                const labels = historyLabels(history, state.histories, product, NOW);
+                const labels = historyLabels(history, state.histories, product, now);
                 return (
                   <tr key={history.id} data-testid={`history-row-${history.id}`} className={labels.includes("過去最安") ? "lowest-row" : ""}>
                     <td data-label="記録日時">{new Intl.DateTimeFormat("ja-JP", { dateStyle: "short", timeStyle: "short" }).format(new Date(history.recordedAt))}</td>
@@ -1462,7 +1449,7 @@ function ChartControls({
   );
 }
 
-function ProductDetail({ product, state, onStateChange }: { product: Product; state: PriceAppState; onStateChange: (state: PriceAppState) => void }) {
+function ProductDetail({ product, state, now, onStateChange }: { product: Product; state: PriceAppState; now: Date; onStateChange: (state: PriceAppState) => void }) {
   const [period, setPeriod] = useState<ChartPeriod>(state.settings.preferredChartPeriod);
   const [priceType, setPriceType] = useState<PriceType>(state.settings.preferredChartPriceType);
   const [storeViewMode, setStoreViewMode] = useState<StoreViewMode>("overall-lowest");
@@ -1475,7 +1462,7 @@ function ProductDetail({ product, state, onStateChange }: { product: Product; st
     storeViewMode,
     selectedStores,
     dailyRepresentativeMode,
-    now: NOW
+    now
   });
 
   useEffect(() => {
@@ -1500,16 +1487,16 @@ function ProductDetail({ product, state, onStateChange }: { product: Product; st
         </div>
         <div className="header-price">
           <span>現在の実質価格</span>
-          <strong>{yen(calculatePriceMetrics(product, state.histories, state.settings, NOW).currentEffectivePrice)}</strong>
-          <span>{currentLowestRelationship(product, state.histories, state.settings, NOW)}</span>
+          <strong>{yen(calculatePriceMetrics(product, state.histories, state.settings, now).currentEffectivePrice)}</strong>
+          <span>{currentLowestRelationship(product, state.histories, state.settings, now)}</span>
         </div>
       </div>
       <ProductPriceSettings product={product} onUpdated={onStateChange} />
       <details className="advanced-panel" data-testid="price-advanced-details">
         <summary data-testid="price-advanced-summary">価格推移・履歴を確認する</summary>
         <div className="advanced-panel-body">
-          <PriceSummary product={product} state={state} />
-          <EvaluationPanel product={product} state={state} />
+          <PriceSummary product={product} state={state} now={now} />
+          <EvaluationPanel product={product} state={state} now={now} />
           <ManualPriceForm product={product} state={state} onRecorded={onStateChange} />
           <ChartControls
             product={product}
@@ -1537,9 +1524,9 @@ function ProductDetail({ product, state, onStateChange }: { product: Product; st
             storeViewMode={storeViewMode}
             selectedStores={selectedStores}
             dailyRepresentativeMode={dailyRepresentativeMode}
-            now={NOW}
+            now={now}
           />
-          <HistoryTable product={product} state={state} onUpdated={onStateChange} />
+          <HistoryTable product={product} state={state} now={now} onUpdated={onStateChange} />
         </div>
       </details>
     </article>
@@ -1726,7 +1713,8 @@ function AppFooter({
   );
 }
 
-export function PriceApp() {
+export function PriceApp({ clock = systemClock }: { clock?: Clock } = {}) {
+  const [now] = useState(() => clock.now());
   const [state, setState] = useState<PriceAppState | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>("overview");
@@ -1805,7 +1793,7 @@ export function PriceApp() {
       <AppTabs activeTab={activeTab} onChange={setActiveTab} />
 
       {activeTab === "overview" && (
-        <BudgetOverview state={state} mode={budgetMode} onModeChange={setBudgetMode} onOpenProduct={openProduct} onOpenLedger={() => setActiveTab("ledger")} />
+        <BudgetOverview state={state} mode={budgetMode} now={now} onModeChange={setBudgetMode} onOpenProduct={openProduct} onOpenLedger={() => setActiveTab("ledger")} />
       )}
 
       {activeTab === "wishlist" && (
@@ -1820,7 +1808,7 @@ export function PriceApp() {
         </div>
       )}
 
-      {activeTab === "ledger" && <HouseholdBook state={state} onStateChange={setState} />}
+      {activeTab === "ledger" && <HouseholdBook state={state} now={now} onStateChange={setState} />}
 
       {activeTab === "price" && (
         <div className="workspace">
@@ -1837,13 +1825,13 @@ export function PriceApp() {
             </div>
             <div className="product-list" data-testid="product-list">
               {state.products.map((product) => (
-                <ProductCard key={product.id} product={product} state={state} selected={product.id === selectedProduct?.id} onSelect={() => setSelectedProductId(product.id)} />
+                <ProductCard key={product.id} product={product} state={state} now={now} selected={product.id === selectedProduct?.id} onSelect={() => setSelectedProductId(product.id)} />
               ))}
             </div>
           </aside>
           <section className="detail-panel">
             {selectedProduct ? (
-              <ProductDetail key={selectedProduct.id} product={selectedProduct} state={state} onStateChange={setState} />
+              <ProductDetail key={selectedProduct.id} product={selectedProduct} state={state} now={now} onStateChange={setState} />
             ) : (
               <div className="empty-chart">
                 <AlertTriangle size={20} />

@@ -19,7 +19,7 @@ import {
   validLowestHistories
 } from "./price-analytics";
 import { evaluateCurrentPrice } from "./price-evaluation";
-import { calculateBudgetSummary, groupProductsByCategory, selectedBudgetProducts } from "./wishlist";
+import { calculateBudgetSummary, groupProductsByCategory, selectedBudgetProducts, wishlistPrice } from "./wishlist";
 
 const NOW = new Date("2026-07-05T04:00:00.000Z");
 
@@ -169,6 +169,53 @@ describe("価格ドメインロジック", () => {
     expect(summary.itemCount).toBe(2);
     expect(summary.total).toBe(26300);
     expect(selectedBudgetProducts(app.products, "planned").map((product) => product.id)).toEqual(["product-headphones", "product-coffee"]);
+  });
+
+  it("価格未設定は予算合計から除外し、0円は価格ありとして扱う", () => {
+    const app = state();
+    const base = app.products[0];
+    const unsetProduct = {
+      ...base,
+      id: "product-unset",
+      name: "価格未設定の商品",
+      candidateRank: 3,
+      offers: [
+        {
+          ...base.offers[0],
+          id: "offer-unset",
+          productId: "product-unset",
+          listedPrice: null,
+          effectivePrice: null
+        }
+      ],
+      calculationOfferId: "offer-unset"
+    };
+    const zeroPriceProduct = {
+      ...base,
+      id: "product-free",
+      name: "0円の商品",
+      candidateRank: 4,
+      offers: [
+        {
+          ...base.offers[0],
+          id: "offer-free",
+          productId: "product-free",
+          listedPrice: 0,
+          effectivePrice: 0
+        }
+      ],
+      calculationOfferId: "offer-free"
+    };
+
+    app.products = [...app.products, unsetProduct, zeroPriceProduct];
+    const summary = calculateBudgetSummary(app, "planned");
+
+    expect(wishlistPrice(unsetProduct)).toBeNull();
+    expect(wishlistPrice(zeroPriceProduct)).toBe(0);
+    expect(summary.total).toBe(26300);
+    expect(summary.itemCount).toBe(4);
+    expect(summary.pricedItemCount).toBe(3);
+    expect(summary.unsetPriceCount).toBe(1);
   });
 
   it("第一候補商品の合計を計算する", () => {

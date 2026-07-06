@@ -19,6 +19,7 @@ import type {
 import { DEFAULT_PRICE_SETTINGS } from "@/domain/price-types";
 import { calculateEffectivePrice, toNumberOrNull, validatePriceSnapshot } from "@/domain/price-calculations";
 import { createPriceHistory, latestHistoryForOffer, shouldCreatePriceHistory } from "@/domain/price-history";
+import { normalizeCandidateRanks } from "@/domain/ranking";
 import { createSupabaseServerClient, getAuthenticatedUserId } from "./server";
 
 interface ProductRow {
@@ -391,6 +392,41 @@ async function readLedgerRows(supabase: SupabaseClient, userId: string): Promise
   throw new Error(error.message);
 }
 
+function productRowRankScope(row: ProductRow): string {
+  return row.detail_category?.trim() || row.category.trim() || "未分類";
+}
+
+async function normalizeSupabaseCandidateRanks(supabase: SupabaseClient, userId: string): Promise<void> {
+  const rows = await assertOk(supabase.from("products").select("*").eq("user_id", userId).returns<ProductRow[]>());
+  const groups = new Map<string, ProductRow[]>();
+  for (const row of rows ?? []) {
+    const key = `${row.user_id}:${productRowRankScope(row)}`;
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+
+  const updates: Array<PromiseLike<{ data: unknown; error: { message: string } | null }>> = [];
+  for (const group of groups.values()) {
+    [...group]
+      .sort((a, b) => {
+        const rankDiff = parseRank(a.candidate_rank) - parseRank(b.candidate_rank);
+        if (rankDiff !== 0) return rankDiff;
+        const updatedDiff = new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+        if (updatedDiff !== 0) return updatedDiff;
+        const createdDiff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        if (createdDiff !== 0) return createdDiff;
+        return a.id.localeCompare(b.id);
+      })
+      .forEach((row, index) => {
+        const nextRank = index + 1;
+        if (parseRank(row.candidate_rank) !== nextRank) {
+          updates.push(supabase.from("products").update({ candidate_rank: nextRank }).eq("id", row.id).eq("user_id", userId));
+        }
+      });
+  }
+
+  await Promise.all(updates.map((update) => assertOk(update)));
+}
+
 export async function readSupabaseState(): Promise<PriceAppState> {
   const supabase = await createSupabaseServerClient();
   const userId = await getAuthenticatedUserId();
@@ -411,9 +447,11 @@ export async function readSupabaseState(): Promise<PriceAppState> {
     offersByProduct.set(offer.productId, [...(offersByProduct.get(offer.productId) ?? []), offer]);
   }
 
+  const normalizedProducts = normalizeCandidateRanks(products.map((row) => productFromRow(row, offersByProduct.get(row.id) ?? [])));
+
   return {
     userId,
-    products: products.map((row) => productFromRow(row, offersByProduct.get(row.id) ?? [])),
+    products: normalizedProducts,
     histories: histories.map(historyFromRow),
     settings,
     ledgerEntries: (ledgerRows ?? []).map(ledgerEntryFromRow)
@@ -494,6 +532,7 @@ export async function createSupabaseProduct(input: Record<string, unknown>): Pro
   );
   await assertOk(supabase.from("offers").insert(offerToRow(offer, userId)));
   await assertOk(supabase.from("products").update({ calculation_offer_id: offerId }).eq("id", productId).eq("user_id", userId));
+  await normalizeSupabaseCandidateRanks(supabase, userId);
   return readSupabaseState();
 }
 
@@ -528,6 +567,7 @@ export async function updateSupabaseProduct(productId: string, input: Record<str
     await assertOk(supabase.from("offers").update({ is_calculation_target: false }).eq("product_id", productId).eq("user_id", userId));
     await assertOk(supabase.from("offers").update({ is_calculation_target: true }).eq("id", nextOfferId).eq("product_id", productId).eq("user_id", userId));
   }
+  await normalizeSupabaseCandidateRanks(supabase, userId);
   return readSupabaseState();
 }
 
@@ -536,6 +576,7 @@ export async function deleteSupabaseProduct(productId: string): Promise<PriceApp
   const userId = await getAuthenticatedUserId();
   await assertOk(supabase.from("products").update({ calculation_offer_id: null }).eq("id", productId).eq("user_id", userId));
   await assertOk(supabase.from("products").delete().eq("id", productId).eq("user_id", userId));
+  await normalizeSupabaseCandidateRanks(supabase, userId);
   return readSupabaseState();
 }
 
